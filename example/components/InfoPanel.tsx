@@ -45,7 +45,12 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
 
   return (
     <div className="fixed top-4 left-4 z-20 max-h-[calc(100vh-2rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-black/80 p-4 text-sm leading-relaxed shadow-xl backdrop-blur-xl">
-      <h1 className="mb-0.5 text-[15px] font-semibold text-white">svg-to-tsl</h1>
+      <div className="mb-0.5 flex items-baseline justify-between gap-2">
+        <h1 className="text-[15px] font-semibold text-white">svg-to-tsl</h1>
+        <a href="/load" className="text-[11px] text-blue-400 hover:text-blue-300">
+          load PNGs →
+        </a>
+      </div>
       <div className="mb-3 text-[11px] text-gray-400">SVG → MSDF (per-color layer) · Three.js / R3F</div>
 
       <div className="border-t border-white/10 pt-2">
