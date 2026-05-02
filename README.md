@@ -85,6 +85,57 @@ function Logo() {
 }
 ```
 
+### `bakeSvgToMsdfLayered` — multi-color SVGs
+
+Plain MSDF can't carry per-shape colors (the R/G/B channels are spent on
+sharp-corner reconstruction). The layered baker handles colored SVGs by
+grouping shapes by their `fill` attribute and producing **one MSDF
+texture per color**, in document order. Render each as a stacked mesh
+with its own color and you get a multi-color, infinitely scalable vector
+texture from a few small MSDFs.
+
+```ts
+import { bakeSvgToMsdfLayered } from 'svg-to-tsl'
+
+const { layers, width, height } = await bakeSvgToMsdfLayered(svgText, {
+  size: 256,
+  range: 4,
+})
+
+// layers: [{ fill: '#1f6feb', texture, ... }, { fill: '#facc15', texture, ... }, ...]
+```
+
+```tsx
+import { MsdfMaterial } from 'svg-to-tsl'
+
+function ColoredLogo({ layers }) {
+  return (
+    <>
+      {layers.map((layer, i) => (
+        <mesh key={i} renderOrder={i}>
+          <sphereGeometry args={[1, 128, 64]} />
+          <primitive
+            attach="material"
+            object={
+              new MsdfMaterial({
+                map: layer.texture,
+                color: layer.fill,
+                alphaOnly: true,
+                transparent: true,
+              })
+            }
+          />
+        </mesh>
+      ))}
+    </>
+  )
+}
+```
+
+`fill` resolution walks `style="fill: …"` → `fill="…"` → inherited from
+parent `<g>` → defaults to black. Shapes with `fill="none"` are skipped.
+Consecutive shapes with the same fill are merged into one layer.
+
 ## Options
 
 ### `bakeSvgToMsdf` options
@@ -110,7 +161,7 @@ function Logo() {
 - CPU baking is O(W × H × N) — fine for small icons / logos, slow for huge SVGs.
 - No support for strokes (only fills), gradients, patterns, masks, clip paths, text, or `use` references.
 - Self-intersecting paths and even-odd fills produce undefined results.
-- Single shape per SVG works best; multiple disjoint shapes work but share one MSDF.
+- Multi-color SVGs need `bakeSvgToMsdfLayered` and one draw call per unique fill color.
 
 ## Acknowledgements
 

@@ -18,6 +18,18 @@ export interface Shape {
   bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
+// One fill-color group from a layered SVG parse. Contours are in
+// document order so caller can render layers back-to-front.
+export interface ShapeLayer {
+  fill: string
+  contours: Contour[]
+}
+
+export interface LayeredShape {
+  layers: ShapeLayer[]
+  bounds: { minX: number; minY: number; maxX: number; maxY: number }
+}
+
 export const EDGE_RED = 0b001
 export const EDGE_GREEN = 0b010
 export const EDGE_BLUE = 0b100

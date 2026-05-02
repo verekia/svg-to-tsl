@@ -5,7 +5,7 @@
 import { CanvasTexture, LinearFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
 
 import { colorEdges } from './edgeColoring.js'
-import { parseSvg } from './parseSvg.js'
+import { parseSvg, parseSvgLayered } from './parseSvg.js'
 import { segmentClosest } from './signedDistance.js'
 import { EDGE_BLUE, EDGE_GREEN, EDGE_RED } from './types.js'
 
@@ -29,10 +29,45 @@ export interface BakeResult {
   bakeMs: number
 }
 
-interface Channel {
-  edges: LineEdge[]
-  mask: number
+export interface LayeredBakeLayer {
+  fill: string
+  texture: Texture
+  pixels: Uint8ClampedArray
+  contours: Contour[]
+  edgeCount: number
+  bakeMs: number
 }
+
+export interface LayeredBakeResult {
+  layers: LayeredBakeLayer[]
+  width: number
+  height: number
+  bounds: { minX: number; minY: number; maxX: number; maxY: number }
+  totalBakeMs: number
+}
+
+interface ResolvedOptions {
+  size: number
+  range: number
+  padding: number
+  flipY: boolean
+  tolerance: number
+  cornerAngle: number
+}
+
+function resolveOptions(options: BakeOptions): ResolvedOptions {
+  return {
+    size: Math.max(8, Math.floor(options.size ?? 256)),
+    range: Math.max(0.5, options.range ?? 4),
+    padding: Math.max(0, Math.floor(options.padding ?? 8)),
+    flipY: options.flipY ?? true,
+    tolerance: options.tolerance ?? 0.25,
+    cornerAngle: options.cornerAngleDeg ?? 3,
+  }
+}
+
+const now = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()
 
 function pointInside(contours: Contour[], px: number, py: number): boolean {
   let inside = false
@@ -63,61 +98,65 @@ function minDistance(edges: LineEdge[], px: number, py: number): number {
   return best
 }
 
-export async function bakeSvgToMsdf(svgText: string, options: BakeOptions = {}): Promise<BakeResult> {
-  const t0 =
-    typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()
-  const size = Math.max(8, Math.floor(options.size ?? 256))
-  const range = Math.max(0.5, options.range ?? 4)
-  const padding = Math.max(0, Math.floor(options.padding ?? 8))
-  const flipY = options.flipY ?? true
-  const tolerance = options.tolerance ?? 0.25
-  const cornerAngle = options.cornerAngleDeg ?? 3
+interface ProjectionParams {
+  scale: number
+  offsetX: number
+  offsetY: number
+  minX: number
+  minY: number
+  svgRange: number
+}
 
-  const shape = parseSvg(svgText, tolerance)
-  if (shape.contours.length === 0) throw new Error('SVG contains no usable shape data')
-  colorEdges(shape.contours, cornerAngle)
-
-  // Map SVG bounds to texture pixels with padding.
-  const { minX, minY, maxX, maxY } = shape.bounds
-  const sw = Math.max(maxX - minX, 1)
-  const sh = Math.max(maxY - minY, 1)
+function buildProjection(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  size: number,
+  padding: number,
+  range: number,
+): ProjectionParams {
+  const sw = Math.max(bounds.maxX - bounds.minX, 1)
+  const sh = Math.max(bounds.maxY - bounds.minY, 1)
   const inner = size - 2 * padding
   const scale = inner / Math.max(sw, sh)
   const offsetX = padding + (inner - sw * scale) / 2
   const offsetY = padding + (inner - sh * scale) / 2
+  return { scale, offsetX, offsetY, minX: bounds.minX, minY: bounds.minY, svgRange: range / scale }
+}
 
-  // Group edges by channel for per-channel min-distance scans.
+function bakeContoursToPixels(
+  contours: Contour[],
+  proj: ProjectionParams,
+  size: number,
+  flipY: boolean,
+): Uint8ClampedArray {
   const allEdges: LineEdge[] = []
-  for (const c of shape.contours) for (const e of c.edges) allEdges.push(e)
-  const channels: Channel[] = [
-    { mask: EDGE_RED, edges: allEdges.filter(e => (e.color & EDGE_RED) !== 0) },
-    { mask: EDGE_GREEN, edges: allEdges.filter(e => (e.color & EDGE_GREEN) !== 0) },
-    { mask: EDGE_BLUE, edges: allEdges.filter(e => (e.color & EDGE_BLUE) !== 0) },
+  for (const c of contours) for (const e of c.edges) allEdges.push(e)
+  const channels: LineEdge[][] = [
+    allEdges.filter(e => (e.color & EDGE_RED) !== 0),
+    allEdges.filter(e => (e.color & EDGE_GREEN) !== 0),
+    allEdges.filter(e => (e.color & EDGE_BLUE) !== 0),
   ]
-
   const pixels = new Uint8ClampedArray(size * size * 4)
-
-  // Pre-compute SVG-space range so distances are comparable.
-  const svgRange = range / scale
-
   for (let py = 0; py < size; py++) {
     const yPixel = flipY ? size - 1 - py : py
-    const sy = (yPixel + 0.5 - offsetY) / scale + minY
+    const sy = (yPixel + 0.5 - proj.offsetY) / proj.scale + proj.minY
     for (let px = 0; px < size; px++) {
-      const sx = (px + 0.5 - offsetX) / scale + minX
-      const inside = pointInside(shape.contours, sx, sy)
+      const sx = (px + 0.5 - proj.offsetX) / proj.scale + proj.minX
+      const inside = pointInside(contours, sx, sy)
       const sign = inside ? 1 : -1
       const idx = (py * size + px) * 4
       for (let c = 0; c < 3; c++) {
-        const d = minDistance(channels[c].edges, sx, sy)
+        const d = minDistance(channels[c], sx, sy)
         const sd = sign * d
-        const v = 0.5 + sd / svgRange
+        const v = 0.5 + sd / proj.svgRange
         pixels[idx + c] = Math.max(0, Math.min(255, Math.round(v * 255)))
       }
       pixels[idx + 3] = 255
     }
   }
+  return pixels
+}
 
+function pixelsToTexture(pixels: Uint8ClampedArray, size: number): Texture {
   if (typeof document === 'undefined' && typeof OffscreenCanvas === 'undefined') {
     throw new Error('bakeSvgToMsdf requires a browser environment with Canvas / OffscreenCanvas')
   }
@@ -140,9 +179,58 @@ export async function bakeSvgToMsdf(svgText: string, options: BakeOptions = {}):
   texture.colorSpace = SRGBColorSpace
   texture.flipY = false
   texture.needsUpdate = true
+  return texture
+}
 
-  const t1 =
-    typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()
+export async function bakeSvgToMsdf(svgText: string, options: BakeOptions = {}): Promise<BakeResult> {
+  const opts = resolveOptions(options)
+  const t0 = now()
 
-  return { texture, width: size, height: size, pixels, shape, bakeMs: t1 - t0 }
+  const shape = parseSvg(svgText, opts.tolerance)
+  if (shape.contours.length === 0) throw new Error('SVG contains no usable shape data')
+  colorEdges(shape.contours, opts.cornerAngle)
+
+  const proj = buildProjection(shape.bounds, opts.size, opts.padding, opts.range)
+  const pixels = bakeContoursToPixels(shape.contours, proj, opts.size, opts.flipY)
+  const texture = pixelsToTexture(pixels, opts.size)
+
+  return { texture, width: opts.size, height: opts.size, pixels, shape, bakeMs: now() - t0 }
+}
+
+export async function bakeSvgToMsdfLayered(svgText: string, options: BakeOptions = {}): Promise<LayeredBakeResult> {
+  const opts = resolveOptions(options)
+  const t0 = now()
+
+  const layered = parseSvgLayered(svgText, opts.tolerance)
+  if (layered.layers.length === 0) throw new Error('SVG contains no fillable shape data')
+
+  // Use the union of all layers for bounds so every layer is rendered
+  // into the same UV / pixel coordinate system. This means stacking the
+  // resulting textures on the same mesh lines up perfectly.
+  const proj = buildProjection(layered.bounds, opts.size, opts.padding, opts.range)
+
+  const layerResults: LayeredBakeLayer[] = []
+  for (const layer of layered.layers) {
+    const layerStart = now()
+    colorEdges(layer.contours, opts.cornerAngle)
+    const pixels = bakeContoursToPixels(layer.contours, proj, opts.size, opts.flipY)
+    const texture = pixelsToTexture(pixels, opts.size)
+    const edgeCount = layer.contours.reduce((s, c) => s + c.edges.length, 0)
+    layerResults.push({
+      fill: layer.fill,
+      texture,
+      pixels,
+      contours: layer.contours,
+      edgeCount,
+      bakeMs: now() - layerStart,
+    })
+  }
+
+  return {
+    layers: layerResults,
+    width: opts.size,
+    height: opts.size,
+    bounds: layered.bounds,
+    totalBakeMs: now() - t0,
+  }
 }

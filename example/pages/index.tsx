@@ -4,48 +4,56 @@ import { MsdfMaterial } from 'svg-to-tsl'
 
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
+import { SphereGeometry } from 'three'
 
 import DropZone from '../components/DropZone'
 import InfoPanel from '../components/InfoPanel'
-import { useSvgMsdf } from '../hooks/useSvgMsdf'
-
-import type { Texture } from 'three'
+import { useSvgMsdf, type BakedLayer } from '../hooks/useSvgMsdf'
 
 const DEFAULT_SVG = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
-  <path d="M128 24
-           L156 96
-           L232 100
-           L172 148
-           L192 224
-           L128 184
-           L64 224
-           L84 148
-           L24 100
-           L100 96 Z" fill="#fff" />
+  <circle cx="128" cy="128" r="110" fill="#1f6feb" />
+  <path d="M128 56 L156 124 L228 128 L172 172 L188 232 L128 200 L68 232 L84 172 L28 128 L100 124 Z" fill="#facc15" />
+  <circle cx="128" cy="148" r="22" fill="#ef4444" />
 </svg>`
 
-interface SphereProps {
-  texture: Texture | null
+interface LayeredSphereProps {
+  layers: BakedLayer[]
 }
 
-const Sphere = ({ texture }: SphereProps) => {
-  const material = useMemo(() => {
-    return new MsdfMaterial({
-      map: texture ?? null,
-      color: 0xffffff,
-      background: 0x303542,
-      threshold: 0.5,
-      transparent: false,
-    })
-  }, [texture])
+const LayeredSphere = ({ layers }: LayeredSphereProps) => {
+  const geometry = useMemo(() => new SphereGeometry(1, 128, 64), [])
+  useEffect(() => () => geometry.dispose(), [geometry])
 
-  useEffect(() => () => material.dispose(), [material])
+  const materials = useMemo(() => {
+    return layers.map(
+      (layer, i) =>
+        new MsdfMaterial({
+          map: layer.texture,
+          color: layer.fill,
+          alphaOnly: true,
+          transparent: true,
+          opacity: 1,
+          // Subtle forward bias per stacked layer so higher-index layers
+          // win the depth fight without z-fighting artifacts.
+          ...{ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -i },
+        }),
+    )
+  }, [layers])
+
+  useEffect(() => () => materials.forEach(m => m.dispose()), [materials])
 
   return (
-    <mesh>
-      <sphereGeometry args={[1, 128, 64]} />
-      <primitive object={material} attach="material" />
-    </mesh>
+    <>
+      {/* Base sphere — visible where no MSDF layer covers. */}
+      <mesh geometry={geometry}>
+        <meshBasicMaterial color="#303542" />
+      </mesh>
+      {materials.map((mat, i) => (
+        <mesh key={i} geometry={geometry} renderOrder={i + 1}>
+          <primitive object={mat} attach="material" />
+        </mesh>
+      ))}
+    </>
   )
 }
 
@@ -62,7 +70,7 @@ const IndexPage = () => {
     reader.readAsText(dropped)
   }, [])
 
-  const { texture, info, baking } = useSvgMsdf(svgText, { size, range })
+  const { info, baking } = useSvgMsdf(svgText, { size, range })
 
   return (
     <>
@@ -73,7 +81,7 @@ const IndexPage = () => {
         <ambientLight intensity={0.6} />
         <directionalLight position={[3, 3, 4]} intensity={0.8} />
         <OrbitControls enableDamping dampingFactor={0.08} enablePan={false} minDistance={1.6} maxDistance={6} />
-        <Sphere texture={texture} />
+        {info ? <LayeredSphere layers={info.layers} /> : null}
       </Canvas>
       <DropZone onFileDrop={onFileDrop} hasTexture={!!file} />
       <InfoPanel
