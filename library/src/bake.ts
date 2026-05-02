@@ -2,7 +2,7 @@
 // unsigned distance per color channel (R/G/B) to the colored edge set,
 // signed by an even-odd point-in-polygon test.
 
-import { CanvasTexture, LinearFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
+import { CanvasTexture, LinearFilter, NoColorSpace, RGBAFormat, RepeatWrapping, type Texture } from 'three'
 
 import { colorEdges } from './edgeColoring.js'
 import { parseSvg, parseSvgLayered } from './parseSvg.js'
@@ -176,7 +176,8 @@ function pixelsToTexture(pixels: Uint8ClampedArray, size: number): Texture {
   texture.wrapS = RepeatWrapping
   texture.wrapT = RepeatWrapping
   texture.generateMipmaps = false
-  texture.colorSpace = SRGBColorSpace
+  // MSDF channels are raw signed-distance data, not gamma-encoded color.
+  texture.colorSpace = NoColorSpace
   texture.flipY = false
   texture.needsUpdate = true
   return texture

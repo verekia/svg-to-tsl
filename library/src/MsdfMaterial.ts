@@ -1,9 +1,10 @@
-// Three.js material that samples a baked MSDF texture using median-of-3
-// reconstruction with screen-space derivatives for analytic AA.
+// MSDF material implemented with TSL so it runs natively under
+// WebGPURenderer. Median-of-3 reconstruction with screen-space
+// derivatives for analytic AA.
 
-import { Color, ShaderMaterial, UniformsLib, UniformsUtils, type ColorRepresentation, type Texture } from 'three'
-
-import { msdfFragment } from './shaders.js'
+import { Color, type ColorRepresentation, type Texture } from 'three'
+import { Fn, clamp, color as colorNode, float, fwidth, max, min, mix, texture, uniform, uv } from 'three/tsl'
+import { MeshBasicNodeMaterial } from 'three/webgpu'
 
 export interface MsdfMaterialParameters {
   map?: Texture | null
@@ -17,55 +18,49 @@ export interface MsdfMaterialParameters {
   alphaOnly?: boolean
 }
 
-const vertexShader = /* glsl */ `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * mv;
-  }
-`
+// TSL helper: median of the three channels (R, G, B). Used to reconstruct
+// a single signed-distance value from a multi-channel SDF sample.
+const median3 = Fn<[unknown], unknown>(([v]) => {
+  const c = v as { r: any; g: any; b: any }
+  return max(min(c.r, c.g), min(max(c.r, c.g), c.b))
+})
 
-export class MsdfMaterial extends ShaderMaterial {
+export class MsdfMaterial extends MeshBasicNodeMaterial {
+  readonly colorUniform: ReturnType<typeof colorNode>
+  readonly backgroundUniform: ReturnType<typeof colorNode>
+  readonly thresholdUniform: ReturnType<typeof float>
+  readonly opacityUniform: ReturnType<typeof float>
+
   constructor(parameters: MsdfMaterialParameters = {}) {
-    const color = new Color(parameters.color ?? 0xffffff)
-    const bg = new Color(parameters.background ?? 0x000000)
-    super({
-      defines: {
-        ALPHA_ONLY: parameters.alphaOnly ? 1 : 0,
-      },
-      uniforms: UniformsUtils.merge([
-        UniformsLib.common,
-        {
-          uMap: { value: parameters.map ?? null },
-          uColor: { value: color },
-          uBackground: { value: bg },
-          uThreshold: { value: parameters.threshold ?? 0.5 },
-          uOpacity: { value: parameters.opacity ?? 1 },
-        },
-      ]),
-      vertexShader,
-      fragmentShader: msdfFragment,
-      transparent: parameters.transparent ?? true,
-    })
+    super()
+
+    this.colorUniform = uniform(new Color(parameters.color ?? 0xffffff)) as unknown as ReturnType<typeof colorNode>
+    this.backgroundUniform = uniform(new Color(parameters.background ?? 0x000000)) as unknown as ReturnType<
+      typeof colorNode
+    >
+    this.thresholdUniform = uniform(parameters.threshold ?? 0.5, 'float') as unknown as ReturnType<typeof float>
+    this.opacityUniform = uniform(parameters.opacity ?? 1, 'float') as unknown as ReturnType<typeof float>
+
+    this.map = parameters.map ?? null
+    const sample = parameters.map ? texture(parameters.map, uv()).rgb : uv().xyx
+    const sd = (median3(sample) as ReturnType<typeof float>).sub(this.thresholdUniform)
+    const aa = max(fwidth(sd), float(1e-5))
+    const coverage = clamp(sd.div(aa).add(0.5), 0, 1)
+
+    if (parameters.alphaOnly) {
+      this.colorNode = this.colorUniform
+      this.opacityNode = coverage.mul(this.opacityUniform)
+    } else {
+      this.colorNode = mix(this.backgroundUniform, this.colorUniform, coverage)
+      this.opacityNode = max(coverage.mul(this.opacityUniform), this.opacityUniform)
+    }
+
+    this.transparent = parameters.transparent ?? true
   }
 
-  get map(): Texture | null {
-    return this.uniforms.uMap.value as Texture | null
-  }
-  set map(value: Texture | null) {
-    this.uniforms.uMap.value = value
-  }
-  get color(): Color {
-    return this.uniforms.uColor.value as Color
-  }
-  get background(): Color {
-    return this.uniforms.uBackground.value as Color
-  }
-  get threshold(): number {
-    return this.uniforms.uThreshold.value as number
-  }
-  set threshold(value: number) {
-    this.uniforms.uThreshold.value = value
-  }
+  // Colors and threshold are exposed via the uniform nodes — mutate
+  // `.colorUniform.value`, `.backgroundUniform.value`, etc. to animate.
+  // We don't override the parent's `color` getter because
+  // MeshBasicNodeMaterial reads it during construction before our fields
+  // are initialized.
 }

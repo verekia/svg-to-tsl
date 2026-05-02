@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { MsdfMaterial } from 'svg-to-tsl'
 
-import { OrbitControls } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
-import { SphereGeometry } from 'three'
+import { OrbitControls } from '@react-three/drei/webgpu'
+import { Canvas } from '@react-three/fiber/webgpu'
+import { BufferAttribute, BufferGeometry } from 'three'
+import { checker, color, mix, uv } from 'three/tsl'
+import { MeshBasicNodeMaterial, NoToneMapping } from 'three/webgpu'
 
 import DropZone from '../components/DropZone'
 import InfoPanel from '../components/InfoPanel'
@@ -16,14 +18,11 @@ const DEFAULT_SVG = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/sv
   <circle cx="128" cy="148" r="22" fill="#ef4444" />
 </svg>`
 
-interface LayeredSphereProps {
+interface LayeredPlaneProps {
   layers: BakedLayer[]
 }
 
-const LayeredSphere = ({ layers }: LayeredSphereProps) => {
-  const geometry = useMemo(() => new SphereGeometry(1, 128, 64), [])
-  useEffect(() => () => geometry.dispose(), [geometry])
-
+const LayeredPlane = ({ layers }: LayeredPlaneProps) => {
   const materials = useMemo(() => {
     return layers.map(
       (layer, i) =>
@@ -44,16 +43,53 @@ const LayeredSphere = ({ layers }: LayeredSphereProps) => {
 
   return (
     <>
-      {/* Base sphere — visible where no MSDF layer covers. */}
-      <mesh geometry={geometry}>
-        <meshBasicMaterial color="#303542" />
-      </mesh>
       {materials.map((mat, i) => (
-        <mesh key={i} geometry={geometry} renderOrder={i + 1}>
+        <mesh key={i} renderOrder={i + 1}>
+          <planeGeometry args={[2, 2]} />
           <primitive object={mat} attach="material" />
         </mesh>
       ))}
+      <PlaneOutline />
     </>
+  )
+}
+
+const PlaneOutline = () => {
+  // 4 line segments (8 vertex pairs) tracing the MSDF plane perimeter.
+  // Slight z bias keeps the outline on top of the layer planes.
+  const geometry = useMemo(() => {
+    const g = new BufferGeometry()
+    const z = 0.001
+    g.setAttribute(
+      'position',
+      new BufferAttribute(
+        new Float32Array([-1, -1, z, 1, -1, z, 1, -1, z, 1, 1, z, 1, 1, z, -1, 1, z, -1, 1, z, -1, -1, z]),
+        3,
+      ),
+    )
+    return g
+  }, [])
+  useEffect(() => () => geometry.dispose(), [geometry])
+  return (
+    <lineSegments renderOrder={9999}>
+      <primitive object={geometry} attach="geometry" />
+      <lineBasicMaterial color="white" transparent opacity={0.6} />
+    </lineSegments>
+  )
+}
+
+const Checkerboard = () => {
+  const material = useMemo(() => {
+    const m = new MeshBasicNodeMaterial()
+    m.colorNode = mix(color(0x1a1d24), color(0x2a2f3a), checker(uv().mul(20)))
+    return m
+  }, [])
+  useEffect(() => () => material.dispose(), [material])
+  return (
+    <mesh position={[0, 0, -0.5]}>
+      <planeGeometry args={[40, 40]} />
+      <primitive object={material} attach="material" />
+    </mesh>
   )
 }
 
@@ -77,11 +113,16 @@ const IndexPage = () => {
       <Canvas
         camera={{ fov: 40, near: 0.1, far: 100, position: [0, 0.2, 3.4] }}
         className="fixed top-0 left-0 h-screen w-screen bg-neutral-800"
+        renderer={{
+          powerPreference: 'high-performance',
+          antialias: true,
+          alpha: false,
+          toneMapping: NoToneMapping,
+        }}
       >
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[3, 3, 4]} intensity={0.8} />
-        <OrbitControls enableDamping dampingFactor={0.08} enablePan={false} minDistance={1.6} maxDistance={6} />
-        {info ? <LayeredSphere layers={info.layers} /> : null}
+        <OrbitControls enableDamping dampingFactor={0.08} minDistance={1.6} maxDistance={6} />
+        <Checkerboard />
+        {info ? <LayeredPlane layers={info.layers} /> : null}
       </Canvas>
       <DropZone onFileDrop={onFileDrop} hasTexture={!!file} />
       <InfoPanel

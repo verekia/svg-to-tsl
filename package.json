@@ -25,5 +25,10 @@
     "husky": "9.1.7",
     "oxfmt": "0.28.0",
     "oxlint": "1.43.0"
+  },
+  "patchedDependencies": {
+    "detect-gpu@5.0.70": "patches/detect-gpu@5.0.70.patch",
+    "@react-three/fiber@10.0.0-canary.1b98c17": "patches/@react-three%2Ffiber@10.0.0-canary.1b98c17.patch",
+    "@react-three/drei@11.0.0-alpha.5": "patches/@react-three%2Fdrei@11.0.0-alpha.5.patch"
   }
 }

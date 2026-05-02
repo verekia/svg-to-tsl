@@ -251,9 +251,9 @@ function visit(el: Element, ctx: VisitContext, inheritedFill: string | null) {
       emitShapeForElement(el, pen)
       closeSubpath(pen)
       if (pen.contours.length === 0) return
-      const last = ctx.layers[ctx.layers.length - 1]
-      if (last && last.fill === fill) {
-        for (const c of pen.contours) last.contours.push(c)
+      const existing = ctx.layers.find(l => l.fill === fill)
+      if (existing) {
+        for (const c of pen.contours) existing.contours.push(c)
       } else {
         ctx.layers.push({ fill, contours: pen.contours })
       }

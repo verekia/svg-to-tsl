@@ -16,7 +16,6 @@ export {
 } from './bake.js'
 export { SvgMsdfLoader, type SvgMsdfMetadata } from './SvgMsdfLoader.js'
 export { MsdfMaterial, type MsdfMaterialParameters } from './MsdfMaterial.js'
-export { msdfFragment } from './shaders.js'
 
 export { parseSvg, parseSvgLayered } from './parseSvg.js'
 export { parsePath, type PathCommand } from './pathParser.js'

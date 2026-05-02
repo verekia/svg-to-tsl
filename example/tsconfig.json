@@ -2,6 +2,7 @@
   "compilerOptions": {
     // Environment
     "lib": ["ESNext", "DOM"],
+    "types": ["@webgpu/types"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
