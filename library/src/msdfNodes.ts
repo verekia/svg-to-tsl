@@ -8,8 +8,11 @@
 //      drive `color`, `map`, `opacity`, `threshold` via JSX props and the
 //      changes propagate into the underlying uniforms.
 
-import { Color, type ColorRepresentation, type Texture } from 'three'
+import { Color, Vector2, type ColorRepresentation, type Texture } from 'three'
 import { Fn, clamp, float, fwidth, max, min, texture, uniform, uniformTexture, uv } from 'three/tsl'
+
+// Tuple form accepted by setters: [x, y].
+export type Vec2Tuple = [number, number]
 
 export interface MsdfNodeMaterialParameters {
   map?: Texture | null
@@ -25,6 +28,13 @@ export interface MsdfNodeMaterialParameters {
   // the `threshold` uniform. Pass the `halfWidthNorm` value the baker
   // returned for an exact match to the SVG stroke-width.
   lineHalfWidth?: number
+  // How many times the SVG repeats across the mesh's UV [0,1] range.
+  // Distinct from `Texture.repeat` — that property is ignored here because
+  // we sample via a custom TSL graph, not the stock material pipeline.
+  tiling?: Vector2 | Vec2Tuple
+  // UV translation applied after tiling. Same caveat as above: this is our
+  // own uniform, not `Texture.offset`.
+  uvOffset?: Vector2 | Vec2Tuple
 }
 
 const median3 = Fn<[unknown], unknown>(([v]) => {
@@ -37,6 +47,14 @@ export interface MsdfUniforms {
   colorUniform: ReturnType<typeof uniform>
   thresholdUniform: ReturnType<typeof float>
   opacityUniform: ReturnType<typeof float>
+  tilingUniform: ReturnType<typeof uniform>
+  uvOffsetUniform: ReturnType<typeof uniform>
+}
+
+function toVec2(v: Vector2 | Vec2Tuple | undefined, dx: number, dy: number): Vector2 {
+  if (!v) return new Vector2(dx, dy)
+  if (v instanceof Vector2) return v.clone()
+  return new Vector2(v[0], v[1])
 }
 
 export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParameters): MsdfUniforms {
@@ -48,8 +66,15 @@ export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParame
     parameters.lineHalfWidth !== undefined ? 1 - parameters.lineHalfWidth : (parameters.threshold ?? 0.5)
   const thresholdUniform = uniform(initialThreshold, 'float') as unknown as ReturnType<typeof float>
   const opacityUniform = uniform(parameters.opacity ?? 1, 'float') as unknown as ReturnType<typeof float>
+  const tilingUniform = uniform(toVec2(parameters.tiling, 1, 1))
+  const uvOffsetUniform = uniform(toVec2(parameters.uvOffset, 0, 0))
 
-  const sample = texture(mapUniform, uv()).rgb
+  // Apply our own UV transform. `Texture.repeat`/`Texture.offset` from
+  // three.js are not honored here — only the sampler's wrap modes are
+  // (already RepeatWrapping in bake.ts), which is what makes tiling > 1
+  // actually repeat instead of clamp.
+  const transformedUv = uv().mul(tilingUniform).add(uvOffsetUniform)
+  const sample = texture(mapUniform, transformedUv).rgb
   const median = median3(sample) as ReturnType<typeof float>
   // Single math path. Fill textures (signed, mid-gray edge) and line
   // textures (alpha-mask style — white on path, black far) both decode
@@ -112,6 +137,28 @@ export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParame
       ;(thresholdUniform as unknown as { value: number }).value = 1 - v
     },
   })
+  // Our own UV-transform props. Accept either a Vector2 or a [x, y] tuple
+  // so JSX can write `tiling={[2, 2]}` directly.
+  Object.defineProperty(material, 'tiling', {
+    configurable: true,
+    enumerable: true,
+    get: () => tilingUniform.value as Vector2,
+    set: (v: Vector2 | Vec2Tuple) => {
+      const target = tilingUniform.value as Vector2
+      if (v instanceof Vector2) target.copy(v)
+      else target.set(v[0], v[1])
+    },
+  })
+  Object.defineProperty(material, 'uvOffset', {
+    configurable: true,
+    enumerable: true,
+    get: () => uvOffsetUniform.value as Vector2,
+    set: (v: Vector2 | Vec2Tuple) => {
+      const target = uvOffsetUniform.value as Vector2
+      if (v instanceof Vector2) target.copy(v)
+      else target.set(v[0], v[1])
+    },
+  })
 
-  return { mapUniform, colorUniform, thresholdUniform, opacityUniform }
+  return { mapUniform, colorUniform, thresholdUniform, opacityUniform, tilingUniform, uvOffsetUniform }
 }
