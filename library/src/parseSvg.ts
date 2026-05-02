@@ -1,13 +1,13 @@
 // Convert an SVG document into contours composed of line segments, with
 // optional grouping by fill color. Curves are flattened using
-// `flatten.ts`. Supports the most common shape elements; transforms,
-// strokes, gradients and CSS are ignored.
+// `flatten.ts`. Supports the most common shape elements + their `stroke`
+// attribute; transforms, gradients and CSS are still ignored.
 
 import { flattenCubic, flattenQuadratic } from './flatten.js'
 import { parsePath } from './pathParser.js'
 import { EDGE_WHITE } from './types.js'
 
-import type { Contour, LayeredShape, LineEdge, Shape, ShapeLayer, Vec2 } from './types.js'
+import type { Contour, LayeredShape, LineEdge, LineLayer, Shape, ShapeLayer, Vec2 } from './types.js'
 
 const CIRCLE_KAPPA = 0.5522847498307936
 const SHAPE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line'])
@@ -42,8 +42,27 @@ const closeSubpath = (pen: Pen) => {
   pen.start = null
 }
 
+// Like closeSubpath but doesn't add the wrap-around edge — used for open
+// shapes (`<line>`, `<polyline>`, paths without an explicit `Z`). For
+// stroke / line layers the unsigned distance reads identically either way,
+// but skipping the spurious edge halves the per-pixel distance work.
+const finalizeOpen = (pen: Pen) => {
+  if (pen.current.length >= 2) {
+    const edges: LineEdge[] = []
+    for (let i = 0; i < pen.current.length - 1; i++) {
+      edges.push({ p0: pen.current[i], p1: pen.current[i + 1], color: EDGE_WHITE })
+    }
+    if (edges.length > 0) pen.contours.push({ edges })
+  }
+  pen.current = []
+  pen.start = null
+}
+
 const moveTo = (pen: Pen, x: number, y: number) => {
-  closeSubpath(pen)
+  // Per SVG spec, the previous subpath stays whatever it was (an explicit
+  // `Z` already closed it; no `Z` means it's open). So end-of-subpath
+  // here must NOT add a wrap-around edge.
+  finalizeOpen(pen)
   pen.start = { x, y }
   pen.current = [{ x, y }]
   pen.cx = x
@@ -83,7 +102,8 @@ function pushPath(pen: Pen, d: string) {
     else if (c.type === 'Q') quadraticTo(pen, c.x1, c.y1, c.x, c.y)
     else if (c.type === 'Z') closeSubpath(pen)
   }
-  closeSubpath(pen)
+  // Trailing subpath without an explicit `Z` is open.
+  finalizeOpen(pen)
 }
 
 function pushRect(pen: Pen, x: number, y: number, w: number, h: number, rx: number, ry: number) {
@@ -191,6 +211,34 @@ function resolveFill(el: Element, inherited: string | null): string | null {
   return inherited
 }
 
+function resolveStrokeColor(el: Element, inherited: string | null): string | null {
+  const style = el.getAttribute('style')
+  if (style) {
+    const m = /(?:^|;)\s*stroke\s*:\s*([^;]+)/i.exec(style)
+    if (m) return normalizeFill(m[1])
+  }
+  const s = el.getAttribute('stroke')
+  if (s) return normalizeFill(s)
+  return inherited
+}
+
+function resolveStrokeWidth(el: Element, inherited: number): number {
+  const style = el.getAttribute('style')
+  if (style) {
+    const m = /(?:^|;)\s*stroke-width\s*:\s*([0-9.+\-eE]+)/i.exec(style)
+    if (m) {
+      const w = parseFloat(m[1])
+      if (Number.isFinite(w)) return w
+    }
+  }
+  const w = el.getAttribute('stroke-width')
+  if (w) {
+    const parsed = parseFloat(w)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return inherited
+}
+
 function emitShapeForElement(el: Element, pen: Pen) {
   const tag = el.localName
   if (tag === 'path') {
@@ -221,6 +269,7 @@ function emitShapeForElement(el: Element, pen: Pen) {
       moveTo(pen, pts[0].x, pts[0].y)
       for (let i = 1; i < pts.length; i++) lineTo(pen, pts[i].x, pts[i].y)
       if (tag === 'polygon') closeSubpath(pen)
+      else finalizeOpen(pen)
     }
   } else if (tag === 'line') {
     const x1 = parseFloat(el.getAttribute('x1') ?? '0')
@@ -229,33 +278,58 @@ function emitShapeForElement(el: Element, pen: Pen) {
     const y2 = parseFloat(el.getAttribute('y2') ?? '0')
     moveTo(pen, x1, y1)
     lineTo(pen, x2, y2)
-    closeSubpath(pen)
+    finalizeOpen(pen)
   }
 }
 
 interface VisitContext {
   layered: boolean
   layers: ShapeLayer[]
+  lineLayers: LineLayer[]
   fallbackPen: Pen
   tolerance: number
 }
 
-function visit(el: Element, ctx: VisitContext, inheritedFill: string | null) {
+interface InheritedStyle {
+  fill: string | null
+  stroke: string | null
+  strokeWidth: number
+}
+
+function visit(el: Element, ctx: VisitContext, inherited: InheritedStyle) {
   const tag = el.localName
-  const fill = resolveFill(el, inheritedFill)
+  const fill = resolveFill(el, inherited.fill)
+  const stroke = resolveStrokeColor(el, inherited.stroke)
+  const strokeWidth = resolveStrokeWidth(el, inherited.strokeWidth)
 
   if (SHAPE_TAGS.has(tag)) {
     if (ctx.layered) {
-      if (fill === null) return
+      const hasFill = fill !== null
+      const hasStroke = stroke !== null && strokeWidth > 0
+      if (!hasFill && !hasStroke) return
+
       const pen = newPen(ctx.tolerance)
       emitShapeForElement(el, pen)
-      closeSubpath(pen)
+      // Each branch in `emitShapeForElement` already finalizes (closed
+      // shapes via closeSubpath, open ones via finalizeOpen). Safety net
+      // for any straggler state, leaving open paths open.
+      finalizeOpen(pen)
       if (pen.contours.length === 0) return
-      const existing = ctx.layers.find(l => l.fill === fill)
-      if (existing) {
-        for (const c of pen.contours) existing.contours.push(c)
-      } else {
-        ctx.layers.push({ fill, contours: pen.contours })
+
+      if (hasFill) {
+        const existing = ctx.layers.find(l => l.fill === fill)
+        if (existing) for (const c of pen.contours) existing.contours.push(c)
+        else ctx.layers.push({ fill: fill as string, contours: pen.contours.map(cloneContour) })
+      }
+      if (hasStroke) {
+        const existing = ctx.lineLayers.find(l => l.color === stroke && l.width === strokeWidth)
+        if (existing) for (const c of pen.contours) existing.contours.push(c)
+        else
+          ctx.lineLayers.push({
+            color: stroke as string,
+            width: strokeWidth,
+            contours: pen.contours.map(cloneContour),
+          })
       }
     } else {
       emitShapeForElement(el, ctx.fallbackPen)
@@ -263,7 +337,14 @@ function visit(el: Element, ctx: VisitContext, inheritedFill: string | null) {
     return
   }
 
-  for (const child of Array.from(el.children)) visit(child, ctx, fill)
+  for (const child of Array.from(el.children)) visit(child, ctx, { fill, stroke, strokeWidth })
+}
+
+// Contours are mutated downstream by `colorEdges`; if the same shape is
+// added to both a fill and a stroke layer, each needs its own copy so the
+// channel coloring used for one mode doesn't pollute the other.
+function cloneContour(c: Contour): Contour {
+  return { edges: c.edges.map(e => ({ p0: e.p0, p1: e.p1, color: e.color })) }
 }
 
 function loadSvg(svgText: string): SVGSVGElement {
@@ -288,21 +369,43 @@ function applyViewBox(
   }
 }
 
+const ROOT_INHERITED: InheritedStyle = { fill: DEFAULT_FILL, stroke: null, strokeWidth: 1 }
+
 export function parseSvg(svgText: string, tolerance = 0.25): Shape {
   const svg = loadSvg(svgText)
   const pen = newPen(tolerance)
-  const ctx: VisitContext = { layered: false, layers: [], fallbackPen: pen, tolerance }
-  visit(svg, ctx, DEFAULT_FILL)
-  closeSubpath(pen)
+  const ctx: VisitContext = { layered: false, layers: [], lineLayers: [], fallbackPen: pen, tolerance }
+  visit(svg, ctx, ROOT_INHERITED)
+  finalizeOpen(pen)
   const bounds = applyViewBox(computeBounds(pen.contours), svg)
   return { contours: pen.contours, bounds }
 }
 
 export function parseSvgLayered(svgText: string, tolerance = 0.25): LayeredShape {
   const svg = loadSvg(svgText)
-  const ctx: VisitContext = { layered: true, layers: [], fallbackPen: newPen(tolerance), tolerance }
-  visit(svg, ctx, DEFAULT_FILL)
-  const allContours = ctx.layers.flatMap(l => l.contours)
-  const bounds = applyViewBox(computeBounds(allContours), svg)
-  return { layers: ctx.layers, bounds }
+  const ctx: VisitContext = {
+    layered: true,
+    layers: [],
+    lineLayers: [],
+    fallbackPen: newPen(tolerance),
+    tolerance,
+  }
+  visit(svg, ctx, ROOT_INHERITED)
+  // Bounds: union of fills + lines, but expand lines by half their width
+  // so the stroke band isn't clipped at the texture edge.
+  const fillContours = ctx.layers.flatMap(l => l.contours)
+  const fillBounds = computeBounds(fillContours)
+  let bounds = fillBounds
+  for (const ll of ctx.lineLayers) {
+    const sb = computeBounds(ll.contours)
+    const half = ll.width / 2
+    bounds = {
+      minX: Math.min(bounds.minX, sb.minX - half),
+      minY: Math.min(bounds.minY, sb.minY - half),
+      maxX: Math.max(bounds.maxX, sb.maxX + half),
+      maxY: Math.max(bounds.maxY, sb.maxY + half),
+    }
+  }
+  bounds = applyViewBox(bounds, svg)
+  return { layers: ctx.layers, lineLayers: ctx.lineLayers, bounds }
 }

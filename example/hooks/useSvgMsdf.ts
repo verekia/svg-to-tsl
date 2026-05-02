@@ -4,8 +4,9 @@ import { bakeSvgToMsdfLayered } from 'svg-to-msdf'
 
 import type { Texture } from 'three'
 
-export interface BakedLayer {
-  fill: string
+export interface BakedFillLayer {
+  kind: 'fill'
+  color: string
   texture: Texture
   edgeCount: number
   contourCount: number
@@ -13,10 +14,26 @@ export interface BakedLayer {
   previewUrl: string
 }
 
+export interface BakedLineLayer {
+  kind: 'line'
+  color: string
+  width: number
+  halfWidthNorm: number
+  texture: Texture
+  edgeCount: number
+  contourCount: number
+  bakeMs: number
+  previewUrl: string
+}
+
+export type BakedLayer = BakedFillLayer | BakedLineLayer
+
 export interface BakeInfo {
   totalBakeMs: number
   width: number
   height: number
+  // Fill layers first, then line layers (matches default SVG paint order:
+  // fill before stroke). Each is a separate stacked draw call.
   layers: BakedLayer[]
 }
 
@@ -52,10 +69,23 @@ export function useSvgMsdf(svgText: string | null, options: Options) {
       .then(result => {
         if (cancelled) {
           for (const layer of result.layers) layer.texture.dispose()
+          for (const layer of result.lineLayers) layer.texture.dispose()
           return
         }
-        const layers: BakedLayer[] = result.layers.map(l => ({
-          fill: l.fill,
+        const fillLayers: BakedLayer[] = result.layers.map(l => ({
+          kind: 'fill',
+          color: l.fill,
+          texture: l.texture,
+          edgeCount: l.edgeCount,
+          contourCount: l.contours.length,
+          bakeMs: l.bakeMs,
+          previewUrl: pixelsToDataUrl(l.pixels, result.width, result.height),
+        }))
+        const lineLayers: BakedLayer[] = result.lineLayers.map(l => ({
+          kind: 'line',
+          color: l.color,
+          width: l.width,
+          halfWidthNorm: l.halfWidthNorm,
           texture: l.texture,
           edgeCount: l.edgeCount,
           contourCount: l.contours.length,
@@ -69,7 +99,7 @@ export function useSvgMsdf(svgText: string | null, options: Options) {
             totalBakeMs: result.totalBakeMs,
             width: result.width,
             height: result.height,
-            layers,
+            layers: [...fillLayers, ...lineLayers],
           }
         })
         setBaking(false)

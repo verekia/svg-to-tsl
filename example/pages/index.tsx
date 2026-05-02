@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react'
 
 import DropZone from '../components/DropZone'
 import InfoPanel from '../components/InfoPanel'
-import Scene from '../components/Scene'
+import MaterialPicker from '../components/MaterialPicker'
+import Scene, { type MaterialKind } from '../components/Scene'
 import { useSvgMsdf } from '../hooks/useSvgMsdf'
 
 // 5-point star centered at (128, 128) with outer radius 100 and inner radius 40,
@@ -18,6 +19,7 @@ const IndexPage = () => {
   const [svgText, setSvgText] = useState<string | null>(DEFAULT_SVG)
   const [size, setSize] = useState(256)
   const [range, setRange] = useState(4)
+  const [materialKind, setMaterialKind] = useState<MaterialKind>('basic')
 
   const onFileDrop = useCallback((dropped: File) => {
     setFile(dropped)
@@ -30,7 +32,19 @@ const IndexPage = () => {
 
   return (
     <>
-      <Scene layers={info?.layers ?? null} />
+      <Scene
+        layers={
+          info
+            ? info.layers.map(l =>
+                l.kind === 'line'
+                  ? { kind: 'line' as const, texture: l.texture, color: l.color, lineHalfWidth: l.halfWidthNorm }
+                  : { kind: 'fill' as const, texture: l.texture, color: l.color },
+              )
+            : null
+        }
+        kind={materialKind}
+      />
+      <MaterialPicker value={materialKind} onChange={setMaterialKind} />
       <DropZone onFileDrop={onFileDrop} hasTexture={!!file} />
       <InfoPanel
         file={file}

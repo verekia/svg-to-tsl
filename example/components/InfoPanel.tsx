@@ -18,8 +18,8 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
-const layerFileName = (baseName: string, index: number, fill: string): string =>
-  `${baseName}-msdf-${index}-${fill.replace('#', '')}.png`
+const layerFileName = (baseName: string, index: number, kind: 'fill' | 'line', color: string): string =>
+  `${baseName}-msdf-${index}-${kind}-${color.replace('#', '')}.png`
 
 const triggerDownload = (href: string, filename: string) => {
   const a = document.createElement('a')
@@ -30,10 +30,10 @@ const triggerDownload = (href: string, filename: string) => {
   a.remove()
 }
 
-const downloadAll = (layers: { fill: string; previewUrl: string }[], baseName: string) => {
+const downloadAll = (layers: { kind: 'fill' | 'line'; color: string; previewUrl: string }[], baseName: string) => {
   layers.forEach((layer, i) => {
     // Stagger so the browser doesn't collapse rapid downloads.
-    setTimeout(() => triggerDownload(layer.previewUrl, layerFileName(baseName, i, layer.fill)), i * 120)
+    setTimeout(() => triggerDownload(layer.previewUrl, layerFileName(baseName, i, layer.kind, layer.color)), i * 120)
   })
 }
 
@@ -41,6 +41,8 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
   const totalEdges = result?.layers.reduce((s, l) => s + l.edgeCount, 0) ?? 0
   const bytesPerLayer = result ? result.width * result.height * 4 : 0
   const totalVram = result ? bytesPerLayer * result.layers.length : 0
+  const fillCount = result?.layers.filter(l => l.kind === 'fill').length ?? 0
+  const lineCount = result?.layers.filter(l => l.kind === 'line').length ?? 0
   const baseName = (file?.name ?? 'svg').replace(/\.svg$/i, '')
 
   return (
@@ -56,7 +58,7 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
       <div className="border-t border-white/10 pt-2">
         <Row label="File" value={file?.name ?? '—'} />
         <Row label="Texture" value={`${size} × ${size} px`} />
-        <Row label="Layers" value={result ? String(result.layers.length) : '—'} />
+        <Row label="Layers" value={result ? `${result.layers.length} (${fillCount} fill · ${lineCount} line)` : '—'} />
         <Row label="Total edges" value={result ? String(totalEdges) : '—'} />
         <Row label="VRAM (RGBA8)" value={result ? `${formatBytes(totalVram)}` : '—'} />
         <Row label="Bake time" value={result ? `${result.totalBakeMs.toFixed(1)} ms` : baking ? 'Baking…' : '—'} />
@@ -136,13 +138,21 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
                 <div className="mb-1 flex items-center gap-1.5">
                   <span
                     className="inline-block size-3 rounded-sm border border-white/20"
-                    style={{ background: layer.fill }}
+                    style={{ background: layer.color }}
                   />
-                  <span className="truncate font-mono text-[10px] text-gray-300">{layer.fill}</span>
+                  <span className="truncate font-mono text-[10px] text-gray-300">{layer.color}</span>
+                  <span
+                    className={`rounded px-1 py-px font-mono text-[9px] ${
+                      layer.kind === 'fill' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
+                    }`}
+                    title={layer.kind === 'fill' ? 'Filled MSDF (signed)' : 'Line / stroke (unsigned SDF)'}
+                  >
+                    {layer.kind}
+                  </span>
                 </div>
                 <a
                   href={layer.previewUrl}
-                  download={layerFileName(baseName, i, layer.fill)}
+                  download={layerFileName(baseName, i, layer.kind, layer.color)}
                   title="Download PNG"
                   className="block"
                 >
@@ -155,11 +165,12 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
                 </a>
                 <div className="mt-1 flex items-baseline justify-between gap-1 font-mono text-[10px] text-gray-400">
                   <span>
+                    {layer.kind === 'line' ? `w=${layer.width.toFixed(1)} · ` : ''}
                     {layer.edgeCount} edges · {layer.bakeMs.toFixed(0)} ms
                   </span>
                   <a
                     href={layer.previewUrl}
-                    download={layerFileName(baseName, i, layer.fill)}
+                    download={layerFileName(baseName, i, layer.kind, layer.color)}
                     className="text-blue-400 hover:text-blue-300"
                   >
                     PNG
