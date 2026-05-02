@@ -24,6 +24,8 @@ export class MsdfBasicNodeMaterial extends MeshBasicNodeMaterial implements With
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -35,6 +37,8 @@ export class MsdfLambertNodeMaterial extends MeshLambertNodeMaterial implements 
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -46,6 +50,8 @@ export class MsdfMatcapNodeMaterial extends MeshMatcapNodeMaterial implements Wi
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -57,6 +63,8 @@ export class MsdfPhongNodeMaterial extends MeshPhongNodeMaterial implements With
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -68,6 +76,8 @@ export class MsdfPhysicalNodeMaterial extends MeshPhysicalNodeMaterial implement
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -79,6 +89,8 @@ export class MsdfStandardNodeMaterial extends MeshStandardNodeMaterial implement
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -90,6 +102,8 @@ export class MsdfToonNodeMaterial extends MeshToonNodeMaterial implements WithMs
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
@@ -101,6 +115,8 @@ export class MsdfSpriteNodeMaterial extends SpriteNodeMaterial implements WithMs
   declare colorUniform: MsdfUniforms['colorUniform']
   declare thresholdUniform: MsdfUniforms['thresholdUniform']
   declare opacityUniform: MsdfUniforms['opacityUniform']
+  declare tilingUniform: MsdfUniforms['tilingUniform']
+  declare uvOffsetUniform: MsdfUniforms['uvOffsetUniform']
   constructor(parameters: MsdfNodeMaterialParameters = {}) {
     super()
     Object.assign(this, applyMsdfNodes(this, parameters))
