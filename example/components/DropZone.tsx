@@ -48,7 +48,7 @@ const DropZone = ({ onFileDrop, hasTexture }: DropZoneProps) => {
 
   return (
     <div
-      className={`pointer-events-none fixed inset-0 z-10 flex items-end justify-center pb-6 transition-colors sm:items-center sm:pb-0 ${isDragOver ? 'bg-blue-500/10' : ''}`}
+      className={`pointer-events-none fixed inset-0 z-10 flex items-end justify-center pb-6 transition-colors ${isDragOver ? 'bg-blue-500/10' : ''}`}
     >
       {!hasTexture && (
         <div className="rounded-xl border border-dashed border-white/20 bg-black/70 px-7 py-5 text-center shadow-lg backdrop-blur-md">

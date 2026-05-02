@@ -9,9 +9,18 @@ interface LoadedLayer {
   name: string
   texture: Texture
   fill: string
+  fileSize: number
+  width: number
+  height: number
 }
 
-const loadPngAsTexture = (file: File): Promise<{ texture: Texture; image: HTMLImageElement }> =>
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+const loadPngAsTexture = (file: File): Promise<{ texture: Texture; width: number; height: number }> =>
   new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -25,7 +34,7 @@ const loadPngAsTexture = (file: File): Promise<{ texture: Texture; image: HTMLIm
       tex.generateMipmaps = false
       tex.flipY = false
       tex.needsUpdate = true
-      resolve({ texture: tex, image: img })
+      resolve({ texture: tex, width: img.naturalWidth, height: img.naturalHeight })
       // The image element is kept alive by the Texture; revoke the URL only
       // after upload happens (next frame is fine).
       setTimeout(() => URL.revokeObjectURL(url), 1000)
@@ -49,12 +58,15 @@ const LoadPage = () => {
     const loaded: LoadedLayer[] = []
     for (const file of pngs) {
       try {
-        const { texture } = await loadPngAsTexture(file)
+        const { texture, width, height } = await loadPngAsTexture(file)
         loaded.push({
           id: nextId.current++,
           name: file.name,
           texture,
           fill: '#ffffff',
+          fileSize: file.size,
+          width,
+          height,
         })
       } catch (err) {
         console.error('[svg-to-tsl] PNG load failed:', err)
@@ -129,48 +141,28 @@ const LoadPage = () => {
       {/* Drop overlay tint */}
       {isDragOver && <div className="pointer-events-none fixed inset-0 z-10 bg-blue-500/10" />}
 
-      <div className="fixed top-4 left-4 z-20 max-h-[calc(100vh-2rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-black/80 p-4 text-sm leading-relaxed shadow-xl backdrop-blur-xl">
-        <h1 className="mb-0.5 text-[15px] font-semibold text-white">svg-to-tsl · loader</h1>
-        <div className="mb-3 text-[11px] text-gray-400">Drop pre-baked MSDF PNGs and assign a color per layer</div>
+      {/* Layer controls — top-left panel, only when layers exist */}
+      {layers.length > 0 && (
+        <div className="fixed top-4 left-4 z-20 max-h-[calc(100vh-8rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-black/80 p-4 text-sm leading-relaxed shadow-xl backdrop-blur-xl">
+          <div className="mb-0.5 flex items-baseline justify-between gap-2">
+            <h1 className="text-[15px] font-semibold text-white">svg-to-tsl · loader</h1>
+            <a href="/" className="text-[11px] text-blue-400 hover:text-blue-300">
+              ← baker
+            </a>
+          </div>
+          <div className="mb-3 text-[11px] text-gray-400">
+            {layers.length} layer{layers.length === 1 ? '' : 's'}
+          </div>
 
-        <div className="flex gap-2 border-t border-white/10 pt-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-500 active:bg-blue-700"
-          >
-            Add PNG{layers.length > 0 ? 's' : ''}
-          </button>
-          {layers.length > 0 && (
-            <button
-              type="button"
-              onClick={clearAll}
-              className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-200 transition hover:bg-white/10"
-            >
-              Clear
-            </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,.png"
-            multiple
-            className="hidden"
-            onChange={e => {
-              const files = Array.from(e.target.files ?? [])
-              if (files.length > 0) addFiles(files)
-              e.target.value = ''
-            }}
-          />
-        </div>
+          <div className="border-t border-white/10 pt-2 pb-3">
+            <Row label="PNG total" value={formatBytes(layers.reduce((s, l) => s + l.fileSize, 0))} />
+            <Row
+              label="VRAM (RGBA8)"
+              value={formatBytes(layers.reduce((s, l) => s + l.width * l.height * 4, 0))}
+            />
+          </div>
 
-        {layers.length === 0 ? (
-          <p className="mt-4 text-[11px] leading-snug text-gray-400">
-            Drop one or more MSDF PNGs anywhere on the page (or use the button above). Each PNG becomes one stacked
-            layer; pick a fill color for each.
-          </p>
-        ) : (
-          <div className="mt-3 space-y-2">
+          <div className="space-y-2 border-t border-white/10 pt-3">
             {layers.map((layer, i) => (
               <div key={layer.id} className="rounded-md border border-white/10 bg-white/5 p-2">
                 <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -202,15 +194,66 @@ const LoadPage = () => {
                     placeholder="#ffffff"
                   />
                 </div>
+                <div className="mt-1.5 flex items-baseline justify-between gap-2 font-mono text-[10px] text-gray-400">
+                  <span>
+                    {layer.width} × {layer.height}
+                  </span>
+                  <span>{formatBytes(layer.fileSize)}</span>
+                </div>
               </div>
             ))}
           </div>
-        )}
 
-        <a href="/" className="mt-4 block text-center text-[11px] text-blue-400 hover:text-blue-300">
+          <button
+            type="button"
+            onClick={clearAll}
+            className="mt-3 w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-200 transition hover:bg-white/10"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Bottom-centered drop hint / add button */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-20 flex justify-center">
+        <div className="pointer-events-auto rounded-xl border border-dashed border-white/20 bg-black/70 px-7 py-5 text-center shadow-lg backdrop-blur-md">
+          <div className="mb-1 text-sm font-semibold text-white">
+            {layers.length === 0 ? 'Drop MSDF PNGs' : 'Add more PNGs'}
+          </div>
+          <div className="text-xs text-gray-400">
+            {layers.length === 0 ? 'or click to pick one or more' : 'drop anywhere or click below'}
+          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-3 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition-colors hover:bg-white/10"
+          >
+            Open PNGs…
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,.png"
+            multiple
+            className="hidden"
+            onChange={e => {
+              const files = Array.from(e.target.files ?? [])
+              if (files.length > 0) addFiles(files)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      </div>
+
+      {/* When no layers yet, show the back link as a separate floating chip */}
+      {layers.length === 0 && (
+        <a
+          href="/"
+          className="fixed top-4 left-4 z-20 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-[11px] text-blue-400 backdrop-blur-md hover:text-blue-300"
+        >
           ← back to live SVG baker
         </a>
-      </div>
+      )}
     </>
   )
 }
@@ -220,5 +263,12 @@ const normalizeHex = (hex: string): string => {
   const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim())
   return m && m[1] ? `#${m[1].toLowerCase()}` : '#ffffff'
 }
+
+const Row = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex items-baseline justify-between gap-2 py-0.5">
+    <span className="text-gray-400">{label}</span>
+    <span className="font-mono text-xs text-gray-200">{value}</span>
+  </div>
+)
 
 export default LoadPage

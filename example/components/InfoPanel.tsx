@@ -62,16 +62,6 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
         <Row label="Bake time" value={result ? `${result.totalBakeMs.toFixed(1)} ms` : baking ? 'Baking…' : '—'} />
       </div>
 
-      {result && result.layers.length > 0 && (
-        <button
-          type="button"
-          onClick={() => downloadAll(result.layers, baseName)}
-          className="mt-3 w-full rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-500 active:bg-blue-700"
-        >
-          Download {result.layers.length === 1 ? 'PNG' : `${result.layers.length} PNGs`}
-        </button>
-      )}
-
       <div className="border-t border-white/10 pt-3">
         <div className="mb-1 flex items-baseline justify-between">
           <span className="text-gray-400">Resolution</span>
@@ -130,7 +120,16 @@ const InfoPanel = ({ file, result, baking, size, onSizeChange, range, onRangeCha
 
       {result && result.layers.length > 0 && (
         <div className="mt-3 border-t border-white/10 pt-3">
-          <div className="mb-2 text-[10.5px] tracking-wider text-gray-500 uppercase">Baked layers</div>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <div className="text-[10.5px] tracking-wider text-gray-500 uppercase">Baked layers</div>
+            <button
+              type="button"
+              onClick={() => downloadAll(result.layers, baseName)}
+              className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
+            >
+              Download {result.layers.length === 1 ? 'PNG' : `${result.layers.length} PNGs`}
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {result.layers.map((layer, i) => (
               <div key={i} className="rounded-md border border-white/10 bg-white/5 p-1.5">
