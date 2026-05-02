@@ -2,13 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { LinearFilter, NoColorSpace, RepeatWrapping, Texture } from 'three'
 
-import Scene, { type SceneLayer } from '../components/Scene'
+import MaterialPicker from '../components/MaterialPicker'
+import Scene, { type MaterialKind, type SceneLayer } from '../components/Scene'
 
 interface LoadedLayer {
   id: number
   name: string
   texture: Texture
-  fill: string
+  // 'fill' = signed MSDF (the kind `bakeSvgToMsdf` produces from a fill)
+  // 'line' = unsigned SDF (the kind produced from an SVG `stroke` /
+  //          `<line>` / `<polyline>`). For lines the user also sets a
+  //          band half-width (in normalized 0–1 texture units).
+  kind: 'fill' | 'line'
+  color: string
+  lineHalfWidth: number
   fileSize: number
   width: number
   height: number
@@ -49,6 +56,7 @@ const loadPngAsTexture = (file: File): Promise<{ texture: Texture; width: number
 const LoadPage = () => {
   const [layers, setLayers] = useState<LoadedLayer[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [materialKind, setMaterialKind] = useState<MaterialKind>('basic')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const nextId = useRef(1)
 
@@ -63,7 +71,9 @@ const LoadPage = () => {
           id: nextId.current++,
           name: file.name,
           texture,
-          fill: '#ffffff',
+          kind: 'fill',
+          color: '#ffffff',
+          lineHalfWidth: 0.15,
           fileSize: file.size,
           width,
           height,
@@ -83,8 +93,8 @@ const LoadPage = () => {
     })
   }, [])
 
-  const updateFill = useCallback((id: number, fill: string) => {
-    setLayers(prev => prev.map(l => (l.id === id ? { ...l, fill } : l)))
+  const updateLayer = useCallback(<K extends keyof LoadedLayer>(id: number, patch: Pick<LoadedLayer, K>) => {
+    setLayers(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)))
   }, [])
 
   const clearAll = useCallback(() => {
@@ -132,11 +142,16 @@ const LoadPage = () => {
     [],
   )
 
-  const sceneLayers: SceneLayer[] = layers.map(l => ({ texture: l.texture, fill: l.fill }))
+  const sceneLayers: SceneLayer[] = layers.map(l =>
+    l.kind === 'line'
+      ? { kind: 'line' as const, texture: l.texture, color: l.color, lineHalfWidth: l.lineHalfWidth }
+      : { kind: 'fill' as const, texture: l.texture, color: l.color },
+  )
 
   return (
     <>
-      <Scene layers={sceneLayers.length > 0 ? sceneLayers : null} />
+      <Scene layers={sceneLayers.length > 0 ? sceneLayers : null} kind={materialKind} />
+      <MaterialPicker value={materialKind} onChange={setMaterialKind} />
 
       {/* Drop overlay tint */}
       {isDragOver && <div className="pointer-events-none fixed inset-0 z-10 bg-blue-500/10" />}
@@ -175,22 +190,68 @@ const LoadPage = () => {
                     ✕
                   </button>
                 </div>
+
+                {/* Encoding picker — fill (signed MSDF) vs line (unsigned SDF) */}
+                <div className="mb-1.5 flex gap-1">
+                  {(['fill', 'line'] as const).map(k => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => updateLayer(layer.id, { kind: k })}
+                      className={`flex-1 rounded px-1.5 py-1 text-[10px] font-medium transition ${
+                        layer.kind === k
+                          ? k === 'fill'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-purple-600 text-white'
+                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                      }`}
+                      title={
+                        k === 'fill'
+                          ? 'Treat the PNG as a signed MSDF (a filled shape)'
+                          : 'Treat the PNG as an unsigned SDF (a stroked / line band)'
+                      }
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
-                    value={normalizeHex(layer.fill)}
-                    onChange={e => updateFill(layer.id, e.target.value)}
+                    value={normalizeHex(layer.color)}
+                    onChange={e => updateLayer(layer.id, { color: e.target.value })}
                     className="h-7 w-9 cursor-pointer rounded border border-white/10 bg-transparent"
                   />
                   <input
                     type="text"
-                    value={layer.fill}
-                    onChange={e => updateFill(layer.id, e.target.value)}
+                    value={layer.color}
+                    onChange={e => updateLayer(layer.id, { color: e.target.value })}
                     spellCheck={false}
                     className="w-full rounded border border-white/10 bg-black/40 px-2 py-1 font-mono text-[11px] text-gray-100 focus:border-blue-400 focus:outline-none"
                     placeholder="#ffffff"
                   />
                 </div>
+
+                {/* Line width — only relevant for line layers */}
+                {layer.kind === 'line' && (
+                  <div className="mt-1.5">
+                    <div className="mb-0.5 flex items-baseline justify-between text-[10px]">
+                      <span className="text-gray-400">Line half-width</span>
+                      <span className="font-mono text-gray-200">{layer.lineHalfWidth.toFixed(3)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.005}
+                      max={0.5}
+                      step={0.005}
+                      value={layer.lineHalfWidth}
+                      onChange={e => updateLayer(layer.id, { lineHalfWidth: Number(e.target.value) })}
+                      className="w-full accent-purple-500"
+                    />
+                  </div>
+                )}
+
                 <div className="mt-1.5 flex items-baseline justify-between gap-2 font-mono text-[10px] text-gray-400">
                   <span>
                     {layer.width} × {layer.height}

@@ -1,8 +1,33 @@
 import { useEffect } from 'react'
 
+import {
+  MsdfBasicNodeMaterial,
+  MsdfLambertNodeMaterial,
+  MsdfMatcapNodeMaterial,
+  MsdfPhongNodeMaterial,
+  MsdfPhysicalNodeMaterial,
+  MsdfSpriteNodeMaterial,
+  MsdfStandardNodeMaterial,
+  MsdfToonNodeMaterial,
+} from 'svg-to-msdf'
+
+import { extend } from '@react-three/fiber'
 import '../tailwind.css'
 
 import type { AppProps } from 'next/app'
+
+// Register the MSDF node-material variants as JSX elements so they are usable
+// declaratively: <msdfBasicNodeMaterial map={tex} color="#facc15" />, etc.
+extend({
+  MsdfBasicNodeMaterial,
+  MsdfLambertNodeMaterial,
+  MsdfMatcapNodeMaterial,
+  MsdfPhongNodeMaterial,
+  MsdfPhysicalNodeMaterial,
+  MsdfStandardNodeMaterial,
+  MsdfToonNodeMaterial,
+  MsdfSpriteNodeMaterial,
+})
 
 export default function App({ Component, pageProps }: AppProps) {
   useEffect(() => {

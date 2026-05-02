@@ -38,8 +38,27 @@ export interface LayeredBakeLayer {
   bakeMs: number
 }
 
+// "Line" is the umbrella term for any stroked path — both SVG `stroke`
+// attributes on filled shapes and the natively-open `<line>` / `<polyline>`
+// elements. Texture stores an unsigned distance field rather than the
+// signed MSDF used for fills.
+export interface LayeredBakeLineLayer {
+  color: string
+  width: number
+  texture: Texture
+  pixels: Uint8ClampedArray
+  contours: Contour[]
+  edgeCount: number
+  // Half line width in shader-space units (i.e. divided by `svgRange`).
+  // Pass this to the material as `lineHalfWidth` so the rendered band
+  // matches the original stroke width in SVG units.
+  halfWidthNorm: number
+  bakeMs: number
+}
+
 export interface LayeredBakeResult {
   layers: LayeredBakeLayer[]
+  lineLayers: LayeredBakeLineLayer[]
   width: number
   height: number
   bounds: { minX: number; minY: number; maxX: number; maxY: number }
@@ -122,32 +141,85 @@ function buildProjection(
   return { scale, offsetX, offsetY, minX: bounds.minX, minY: bounds.minY, svgRange: range / scale }
 }
 
+export interface RasterizeMsdfOptions {
+  size?: number
+  range?: number
+  padding?: number
+  flipY?: boolean
+  // 'fill' (default): signed distance, encoded as 0.5 + d/range. White
+  //   inside the shape, black outside, mid-gray on the boundary
+  //   (median-of-3 across R/G/B for sharp-corner reconstruction).
+  // 'line': unsigned distance, encoded as 1 - d/range so the texture is
+  //   alpha-mask-style — white on the path, black far from it. The
+  //   material thresholds at `1 - halfWidthNorm`. Caps and joins are
+  //   round (the natural distance contour).
+  mode?: 'fill' | 'line'
+}
+
+export interface RasterizeMsdfResult {
+  pixels: Uint8ClampedArray
+  width: number
+  height: number
+  // SVG units per `range` (i.e. the range value the rasterizer used,
+  // converted to the shader-space scale). For stroke materials, divide
+  // (strokeWidth / 2) by this to get the shader threshold.
+  svgRange: number
+}
+
+// Engine-agnostic MSDF rasterizer. Given pre-colored contours + their
+// bounding box (typically from `parseSvgLayered` + `colorEdges`), produces
+// raw RGBA8 pixel data that can be PNG-encoded, uploaded to a WebGPU
+// texture, sent across the wire, etc. Three.js is not involved.
+export function rasterizeMsdf(
+  contours: Contour[],
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  options: RasterizeMsdfOptions = {},
+): RasterizeMsdfResult {
+  const size = Math.max(8, Math.floor(options.size ?? 256))
+  const range = Math.max(0.5, options.range ?? 4)
+  const padding = Math.max(0, Math.floor(options.padding ?? 8))
+  const flipY = options.flipY ?? true
+  const mode = options.mode ?? 'fill'
+  const proj = buildProjection(bounds, size, padding, range)
+  const pixels = bakeContoursToPixels(contours, proj, size, flipY, mode)
+  return { pixels, width: size, height: size, svgRange: proj.svgRange }
+}
+
 function bakeContoursToPixels(
   contours: Contour[],
   proj: ProjectionParams,
   size: number,
   flipY: boolean,
+  mode: 'fill' | 'line',
 ): Uint8ClampedArray {
   const allEdges: LineEdge[] = []
   for (const c of contours) for (const e of c.edges) allEdges.push(e)
-  const channels: LineEdge[][] = [
-    allEdges.filter(e => (e.color & EDGE_RED) !== 0),
-    allEdges.filter(e => (e.color & EDGE_GREEN) !== 0),
-    allEdges.filter(e => (e.color & EDGE_BLUE) !== 0),
-  ]
+  // Line mode skips per-channel coloring — distance to the path is the
+  // same in all 3 channels and median3 collapses to that distance.
+  const channels: LineEdge[][] =
+    mode === 'line'
+      ? [allEdges, allEdges, allEdges]
+      : [
+          allEdges.filter(e => (e.color & EDGE_RED) !== 0),
+          allEdges.filter(e => (e.color & EDGE_GREEN) !== 0),
+          allEdges.filter(e => (e.color & EDGE_BLUE) !== 0),
+        ]
   const pixels = new Uint8ClampedArray(size * size * 4)
+  const isLine = mode === 'line'
   for (let py = 0; py < size; py++) {
     const yPixel = flipY ? size - 1 - py : py
     const sy = (yPixel + 0.5 - proj.offsetY) / proj.scale + proj.minY
     for (let px = 0; px < size; px++) {
       const sx = (px + 0.5 - proj.offsetX) / proj.scale + proj.minX
-      const inside = pointInside(contours, sx, sy)
-      const sign = inside ? 1 : -1
+      const sign = isLine ? 1 : pointInside(contours, sx, sy) ? 1 : -1
       const idx = (py * size + px) * 4
       for (let c = 0; c < 3; c++) {
         const d = minDistance(channels[c], sx, sy)
         const sd = sign * d
-        const v = 0.5 + sd / proj.svgRange
+        // Fill: 0.5 + d/range  (white inside, black outside).
+        // Line: 1 - d/range   (white on the path, black far from it —
+        //   alpha-mask style so a single shader threshold works for both).
+        const v = isLine ? 1 - sd / proj.svgRange : 0.5 + sd / proj.svgRange
         pixels[idx + c] = Math.max(0, Math.min(255, Math.round(v * 255)))
       }
       pixels[idx + 3] = 255
@@ -192,7 +264,7 @@ export async function bakeSvgToMsdf(svgText: string, options: BakeOptions = {}):
   colorEdges(shape.contours, opts.cornerAngle)
 
   const proj = buildProjection(shape.bounds, opts.size, opts.padding, opts.range)
-  const pixels = bakeContoursToPixels(shape.contours, proj, opts.size, opts.flipY)
+  const pixels = bakeContoursToPixels(shape.contours, proj, opts.size, opts.flipY, 'fill')
   const texture = pixelsToTexture(pixels, opts.size)
 
   return { texture, width: opts.size, height: opts.size, pixels, shape, bakeMs: now() - t0 }
@@ -203,7 +275,9 @@ export async function bakeSvgToMsdfLayered(svgText: string, options: BakeOptions
   const t0 = now()
 
   const layered = parseSvgLayered(svgText, opts.tolerance)
-  if (layered.layers.length === 0) throw new Error('SVG contains no fillable shape data')
+  if (layered.layers.length === 0 && layered.lineLayers.length === 0) {
+    throw new Error('SVG contains no fillable or stroked shape data')
+  }
 
   // Use the union of all layers for bounds so every layer is rendered
   // into the same UV / pixel coordinate system. This means stacking the
@@ -214,7 +288,7 @@ export async function bakeSvgToMsdfLayered(svgText: string, options: BakeOptions
   for (const layer of layered.layers) {
     const layerStart = now()
     colorEdges(layer.contours, opts.cornerAngle)
-    const pixels = bakeContoursToPixels(layer.contours, proj, opts.size, opts.flipY)
+    const pixels = bakeContoursToPixels(layer.contours, proj, opts.size, opts.flipY, 'fill')
     const texture = pixelsToTexture(pixels, opts.size)
     const edgeCount = layer.contours.reduce((s, c) => s + c.edges.length, 0)
     layerResults.push({
@@ -227,8 +301,28 @@ export async function bakeSvgToMsdfLayered(svgText: string, options: BakeOptions
     })
   }
 
+  const lineResults: LayeredBakeLineLayer[] = []
+  for (const layer of layered.lineLayers) {
+    const layerStart = now()
+    // Line mode uses unsigned distance, so edge coloring is unnecessary.
+    const pixels = bakeContoursToPixels(layer.contours, proj, opts.size, opts.flipY, 'line')
+    const texture = pixelsToTexture(pixels, opts.size)
+    const edgeCount = layer.contours.reduce((s, c) => s + c.edges.length, 0)
+    lineResults.push({
+      color: layer.color,
+      width: layer.width,
+      texture,
+      pixels,
+      contours: layer.contours,
+      edgeCount,
+      halfWidthNorm: layer.width / 2 / proj.svgRange,
+      bakeMs: now() - layerStart,
+    })
+  }
+
   return {
     layers: layerResults,
+    lineLayers: lineResults,
     width: opts.size,
     height: opts.size,
     bounds: layered.bounds,

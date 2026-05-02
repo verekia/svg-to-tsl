@@ -9,13 +9,27 @@
 export {
   bakeSvgToMsdf,
   bakeSvgToMsdfLayered,
+  rasterizeMsdf,
   type BakeOptions,
   type BakeResult,
   type LayeredBakeLayer,
+  type LayeredBakeLineLayer,
   type LayeredBakeResult,
+  type RasterizeMsdfOptions,
+  type RasterizeMsdfResult,
 } from './bake.js'
 export { SvgMsdfLoader, type SvgMsdfMetadata } from './SvgMsdfLoader.js'
-export { MsdfMaterial, type MsdfMaterialParameters } from './MsdfMaterial.js'
+export {
+  MsdfBasicNodeMaterial,
+  MsdfLambertNodeMaterial,
+  MsdfMatcapNodeMaterial,
+  MsdfPhongNodeMaterial,
+  MsdfPhysicalNodeMaterial,
+  MsdfStandardNodeMaterial,
+  MsdfToonNodeMaterial,
+  MsdfSpriteNodeMaterial,
+} from './MsdfNodeMaterials.js'
+export { applyMsdfNodes, type MsdfNodeMaterialParameters, type MsdfUniforms } from './msdfNodes.js'
 
 export { parseSvg, parseSvgLayered } from './parseSvg.js'
 export { parsePath, type PathCommand } from './pathParser.js'
@@ -24,6 +38,7 @@ export { colorEdges } from './edgeColoring.js'
 export {
   type Vec2,
   type LineEdge,
+  type LineLayer,
   type Contour,
   type Shape,
   type ShapeLayer,

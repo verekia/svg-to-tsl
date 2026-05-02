@@ -25,8 +25,22 @@ export interface ShapeLayer {
   contours: Contour[]
 }
 
+// One "line" group from a layered SVG parse, keyed by (color, width).
+// Width is in SVG units (the same coordinate space as `bounds`).
+//
+// "Line" here is the umbrella term for anything stroked: SVG `stroke`s on
+// shapes, plus the natively-open `<line>` and `<polyline>` elements.
+// They produce the same kind of texture (an unsigned distance field — see
+// the readme for the fill-vs-line distinction).
+export interface LineLayer {
+  color: string
+  width: number
+  contours: Contour[]
+}
+
 export interface LayeredShape {
   layers: ShapeLayer[]
+  lineLayers: LineLayer[]
   bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
