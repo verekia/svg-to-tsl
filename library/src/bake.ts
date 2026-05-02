@@ -192,35 +192,62 @@ function bakeContoursToPixels(
   flipY: boolean,
   mode: 'fill' | 'line',
 ): Uint8ClampedArray {
-  const allEdges: LineEdge[] = []
-  for (const c of contours) for (const e of c.edges) allEdges.push(e)
-  // Line mode skips per-channel coloring — distance to the path is the
-  // same in all 3 channels and median3 collapses to that distance.
-  const channels: LineEdge[][] =
-    mode === 'line'
-      ? [allEdges, allEdges, allEdges]
-      : [
-          allEdges.filter(e => (e.color & EDGE_RED) !== 0),
-          allEdges.filter(e => (e.color & EDGE_GREEN) !== 0),
-          allEdges.filter(e => (e.color & EDGE_BLUE) !== 0),
-        ]
-  const pixels = new Uint8ClampedArray(size * size * 4)
   const isLine = mode === 'line'
+  // Line mode: distance is the same per channel (median3 of three equal
+  // values is just that value), so we only ever need one edge list and
+  // one distance computation per pixel.
+  // Fill mode: split edges by channel in a single pass so we don't walk
+  // the whole edge set three times.
+  let red: LineEdge[]
+  let green: LineEdge[]
+  let blue: LineEdge[]
+  if (isLine) {
+    const all: LineEdge[] = []
+    for (const c of contours) for (const e of c.edges) all.push(e)
+    red = green = blue = all
+  } else {
+    red = []
+    green = []
+    blue = []
+    for (const c of contours) {
+      for (const e of c.edges) {
+        if ((e.color & EDGE_RED) !== 0) red.push(e)
+        if ((e.color & EDGE_GREEN) !== 0) green.push(e)
+        if ((e.color & EDGE_BLUE) !== 0) blue.push(e)
+      }
+    }
+  }
+
+  const pixels = new Uint8ClampedArray(size * size * 4)
+  const invRange = 1 / proj.svgRange
   for (let py = 0; py < size; py++) {
     const yPixel = flipY ? size - 1 - py : py
     const sy = (yPixel + 0.5 - proj.offsetY) / proj.scale + proj.minY
     for (let px = 0; px < size; px++) {
       const sx = (px + 0.5 - proj.offsetX) / proj.scale + proj.minX
-      const sign = isLine ? 1 : pointInside(contours, sx, sy) ? 1 : -1
       const idx = (py * size + px) * 4
-      for (let c = 0; c < 3; c++) {
-        const d = minDistance(channels[c], sx, sy)
-        const sd = sign * d
-        // Fill: 0.5 + d/range  (white inside, black outside).
-        // Line: 1 - d/range   (white on the path, black far from it —
+      if (isLine) {
+        // Line: 1 - d/range (white on the path, black far from it —
         //   alpha-mask style so a single shader threshold works for both).
-        const v = isLine ? 1 - sd / proj.svgRange : 0.5 + sd / proj.svgRange
-        pixels[idx + c] = Math.max(0, Math.min(255, Math.round(v * 255)))
+        const d = minDistance(red, sx, sy)
+        const v = 1 - d * invRange
+        const c = Math.max(0, Math.min(255, Math.round(v * 255)))
+        pixels[idx] = c
+        pixels[idx + 1] = c
+        pixels[idx + 2] = c
+      } else {
+        // Fill: 0.5 + d/range (white inside, black outside), signed by an
+        // even-odd point-in-polygon test against the full contour set.
+        const sign = pointInside(contours, sx, sy) ? 1 : -1
+        const dr = minDistance(red, sx, sy)
+        const dg = minDistance(green, sx, sy)
+        const db = minDistance(blue, sx, sy)
+        const vr = 0.5 + sign * dr * invRange
+        const vg = 0.5 + sign * dg * invRange
+        const vb = 0.5 + sign * db * invRange
+        pixels[idx] = Math.max(0, Math.min(255, Math.round(vr * 255)))
+        pixels[idx + 1] = Math.max(0, Math.min(255, Math.round(vg * 255)))
+        pixels[idx + 2] = Math.max(0, Math.min(255, Math.round(vb * 255)))
       }
       pixels[idx + 3] = 255
     }
