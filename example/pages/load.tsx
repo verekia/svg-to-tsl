@@ -97,6 +97,17 @@ const LoadPage = () => {
     setLayers(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)))
   }, [])
 
+  const moveLayer = useCallback((id: number, direction: -1 | 1) => {
+    setLayers(prev => {
+      const i = prev.findIndex(l => l.id === id)
+      const j = i + direction
+      if (i < 0 || j < 0 || j >= prev.length) return prev
+      const next = prev.slice()
+      ;[next[i], next[j]] = [next[j]!, next[i]!]
+      return next
+    })
+  }, [])
+
   const clearAll = useCallback(() => {
     setLayers(prev => {
       prev.forEach(l => l.texture.dispose())
@@ -181,14 +192,34 @@ const LoadPage = () => {
                   <span className="truncate font-mono text-[10px] text-gray-300" title={layer.name}>
                     {i}. {layer.name}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => removeLayer(layer.id)}
-                    className="text-[10px] text-gray-400 hover:text-red-400"
-                    title="Remove layer"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex shrink-0 items-baseline gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => moveLayer(layer.id, -1)}
+                      disabled={i === 0}
+                      className="text-[10px] text-gray-400 hover:text-white disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:text-gray-600"
+                      title="Move back (render earlier)"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveLayer(layer.id, 1)}
+                      disabled={i === layers.length - 1}
+                      className="text-[10px] text-gray-400 hover:text-white disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:text-gray-600"
+                      title="Move front (render later)"
+                    >
+                      ▼
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeLayer(layer.id)}
+                      className="text-[10px] text-gray-400 hover:text-red-400"
+                      title="Remove layer"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
 
                 {/* Encoding picker — fill (signed MSDF) vs line (unsigned SDF) */}
