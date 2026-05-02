@@ -1,0 +1,80 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+interface DropZoneProps {
+  onFileDrop: (file: File) => void
+  hasTexture: boolean
+}
+
+const DropZone = ({ onFileDrop, hasTexture }: DropZoneProps) => {
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = useCallback(
+    (file: File) => {
+      const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)
+      if (isSvg) onFileDrop(file)
+    },
+    [onFileDrop],
+  )
+
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragOver(true)
+    }
+    const onDragLeave = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if ((e as DragEvent).relatedTarget) return
+      setIsDragOver(false)
+    }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragOver(false)
+      const file = e.dataTransfer?.files?.[0]
+      if (file) handleFile(file)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [handleFile])
+
+  return (
+    <div
+      className={`pointer-events-none fixed inset-0 z-10 flex items-end justify-center pb-6 transition-colors sm:items-center sm:pb-0 ${isDragOver ? 'bg-blue-500/10' : ''}`}
+    >
+      {!hasTexture && (
+        <div className="rounded-xl border border-dashed border-white/20 bg-black/70 px-7 py-5 text-center shadow-lg backdrop-blur-md">
+          <div className="mb-1 text-sm font-semibold text-white">Drop an SVG file</div>
+          <div className="text-xs text-gray-400">or click to pick one</div>
+          <button
+            className="pointer-events-auto mt-3 cursor-pointer rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition-colors hover:bg-white/10"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Open SVG…
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/svg+xml,.svg"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) handleFile(file)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default DropZone
