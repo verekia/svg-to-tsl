@@ -42,11 +42,18 @@ const median3 = Fn<[unknown], unknown>(([v]) => {
   return max(min(c.r, c.g), min(max(c.r, c.g), c.b))
 })
 
+// `uniform(x, 'float')` returns a node with a live `.value` getter/setter,
+// but the inferred return type from `three/tsl` doesn't expose it. This
+// alias lets us read/write the scalar without a cast at every site.
+type FloatUniform = ReturnType<typeof float> & { value: number }
+
+const floatUniform = (initial: number): FloatUniform => uniform(initial, 'float') as unknown as FloatUniform
+
 export interface MsdfUniforms {
   mapUniform: ReturnType<typeof uniformTexture>
   colorUniform: ReturnType<typeof uniform>
-  thresholdUniform: ReturnType<typeof float>
-  opacityUniform: ReturnType<typeof float>
+  thresholdUniform: FloatUniform
+  opacityUniform: FloatUniform
   tilingUniform: ReturnType<typeof uniform>
   uvOffsetUniform: ReturnType<typeof uniform>
 }
@@ -64,8 +71,8 @@ export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParame
   // honor an explicit `threshold` (default 0.5 = fill iso-level).
   const initialThreshold =
     parameters.lineHalfWidth !== undefined ? 1 - parameters.lineHalfWidth : (parameters.threshold ?? 0.5)
-  const thresholdUniform = uniform(initialThreshold, 'float') as unknown as ReturnType<typeof float>
-  const opacityUniform = uniform(parameters.opacity ?? 1, 'float') as unknown as ReturnType<typeof float>
+  const thresholdUniform = floatUniform(initialThreshold)
+  const opacityUniform = floatUniform(parameters.opacity ?? 1)
   const tilingUniform = uniform(toVec2(parameters.tiling, 1, 1))
   const uvOffsetUniform = uniform(toVec2(parameters.uvOffset, 0, 0))
 
@@ -112,17 +119,17 @@ export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParame
   Object.defineProperty(material, 'opacity', {
     configurable: true,
     enumerable: true,
-    get: () => (opacityUniform as unknown as { value: number }).value,
+    get: () => opacityUniform.value,
     set: (v: number) => {
-      ;(opacityUniform as unknown as { value: number }).value = v
+      opacityUniform.value = v
     },
   })
   Object.defineProperty(material, 'threshold', {
     configurable: true,
     enumerable: true,
-    get: () => (thresholdUniform as unknown as { value: number }).value,
+    get: () => thresholdUniform.value,
     set: (v: number) => {
-      ;(thresholdUniform as unknown as { value: number }).value = v
+      thresholdUniform.value = v
     },
   })
   // `lineHalfWidth` is a derived view on the same uniform: setting it
@@ -132,9 +139,9 @@ export function applyMsdfNodes(material: any, parameters: MsdfNodeMaterialParame
   Object.defineProperty(material, 'lineHalfWidth', {
     configurable: true,
     enumerable: true,
-    get: () => 1 - (thresholdUniform as unknown as { value: number }).value,
+    get: () => 1 - thresholdUniform.value,
     set: (v: number) => {
-      ;(thresholdUniform as unknown as { value: number }).value = 1 - v
+      thresholdUniform.value = 1 - v
     },
   })
   // Our own UV-transform props. Accept either a Vector2 or a [x, y] tuple

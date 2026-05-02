@@ -280,9 +280,9 @@ export function parsePath(d: string): PathCommand[] {
         const cubics = arcToCubics(cx, cy, rx, ry, angle, largeArc, sweep, ax, ay)
         for (const c of cubics) {
           out.push({ type: 'C', x1: c[0], y1: c[1], x2: c[2], y2: c[3], x: c[4], y: c[5] })
-          prevC2x = c[2]
-          prevC2y = c[3]
         }
+        // Per the SVG spec, S/s does not reflect when the previous command
+        // is A/a, so we don't update `prevC2*` here.
         cx = ax
         cy = ay
         break

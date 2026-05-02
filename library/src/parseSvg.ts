@@ -284,8 +284,8 @@ function emitShapeForElement(el: Element, pen: Pen) {
 
 interface VisitContext {
   layered: boolean
-  layers: ShapeLayer[]
-  lineLayers: LineLayer[]
+  layersByFill: Map<string, ShapeLayer>
+  lineLayersByKey: Map<string, LineLayer>
   fallbackPen: Pen
   tolerance: number
 }
@@ -317,19 +317,22 @@ function visit(el: Element, ctx: VisitContext, inherited: InheritedStyle) {
       if (pen.contours.length === 0) return
 
       if (hasFill) {
-        const existing = ctx.layers.find(l => l.fill === fill)
-        if (existing) for (const c of pen.contours) existing.contours.push(c)
-        else ctx.layers.push({ fill: fill as string, contours: pen.contours.map(cloneContour) })
+        // Always close the fill copy: an open contour (polyline / path
+        // without `Z`) breaks the even-odd point-in-polygon test the
+        // baker uses to sign the SDF, producing garbage fills.
+        const fillContours = pen.contours.map(cloneContourClosed)
+        const existing = ctx.layersByFill.get(fill)
+        if (existing) for (const c of fillContours) existing.contours.push(c)
+        else ctx.layersByFill.set(fill, { fill, contours: fillContours })
       }
       if (hasStroke) {
-        const existing = ctx.lineLayers.find(l => l.color === stroke && l.width === strokeWidth)
-        if (existing) for (const c of pen.contours) existing.contours.push(c)
-        else
-          ctx.lineLayers.push({
-            color: stroke as string,
-            width: strokeWidth,
-            contours: pen.contours.map(cloneContour),
-          })
+        // Stroke copy stays open — an unsigned distance field for an
+        // open polyline shouldn't synthesise a wrap-around segment.
+        const lineContours = pen.contours.map(cloneContour)
+        const key = `${stroke}|${strokeWidth}`
+        const existing = ctx.lineLayersByKey.get(key)
+        if (existing) for (const c of lineContours) existing.contours.push(c)
+        else ctx.lineLayersByKey.set(key, { color: stroke, width: strokeWidth, contours: lineContours })
       }
     } else {
       emitShapeForElement(el, ctx.fallbackPen)
@@ -347,9 +350,30 @@ function cloneContour(c: Contour): Contour {
   return { edges: c.edges.map(e => ({ p0: e.p0, p1: e.p1, color: e.color })) }
 }
 
+// Variant for fill layers: appends a wrap-around edge if the contour
+// isn't already closed. Required for `<polyline fill="…">` and `<path>`s
+// without an explicit `Z`, where the baker's even-odd test would
+// otherwise see the shape as open.
+function cloneContourClosed(c: Contour): Contour {
+  const edges = c.edges.map(e => ({ p0: e.p0, p1: e.p1, color: e.color }))
+  if (edges.length > 0) {
+    const first = edges[0].p0
+    const last = edges[edges.length - 1].p1
+    if (first.x !== last.x || first.y !== last.y) {
+      edges.push({ p0: last, p1: first, color: EDGE_WHITE })
+    }
+  }
+  return { edges }
+}
+
 function loadSvg(svgText: string): SVGSVGElement {
   const parser = new DOMParser()
   const doc = parser.parseFromString(svgText, 'image/svg+xml')
+  // Browsers signal XML parse errors by returning a document containing a
+  // `<parsererror>` element instead of throwing. Surface a real error so
+  // callers don't get a confusing "no usable shape data" further down.
+  const errEl = doc.getElementsByTagName('parsererror')[0]
+  if (errEl) throw new Error(`Invalid SVG: ${errEl.textContent?.trim() || 'XML parse error'}`)
   const svg = doc.documentElement as unknown as SVGSVGElement
   if (svg.nodeName !== 'svg') throw new Error('Root element is not <svg>')
   return svg
@@ -374,7 +398,13 @@ const ROOT_INHERITED: InheritedStyle = { fill: DEFAULT_FILL, stroke: null, strok
 export function parseSvg(svgText: string, tolerance = 0.25): Shape {
   const svg = loadSvg(svgText)
   const pen = newPen(tolerance)
-  const ctx: VisitContext = { layered: false, layers: [], lineLayers: [], fallbackPen: pen, tolerance }
+  const ctx: VisitContext = {
+    layered: false,
+    layersByFill: new Map(),
+    lineLayersByKey: new Map(),
+    fallbackPen: pen,
+    tolerance,
+  }
   visit(svg, ctx, ROOT_INHERITED)
   finalizeOpen(pen)
   const bounds = applyViewBox(computeBounds(pen.contours), svg)
@@ -385,18 +415,19 @@ export function parseSvgLayered(svgText: string, tolerance = 0.25): LayeredShape
   const svg = loadSvg(svgText)
   const ctx: VisitContext = {
     layered: true,
-    layers: [],
-    lineLayers: [],
+    layersByFill: new Map(),
+    lineLayersByKey: new Map(),
     fallbackPen: newPen(tolerance),
     tolerance,
   }
   visit(svg, ctx, ROOT_INHERITED)
+  const layers = [...ctx.layersByFill.values()]
+  const lineLayers = [...ctx.lineLayersByKey.values()]
   // Bounds: union of fills + lines, but expand lines by half their width
   // so the stroke band isn't clipped at the texture edge.
-  const fillContours = ctx.layers.flatMap(l => l.contours)
-  const fillBounds = computeBounds(fillContours)
-  let bounds = fillBounds
-  for (const ll of ctx.lineLayers) {
+  const fillContours = layers.flatMap(l => l.contours)
+  let bounds = computeBounds(fillContours)
+  for (const ll of lineLayers) {
     const sb = computeBounds(ll.contours)
     const half = ll.width / 2
     bounds = {
@@ -407,5 +438,5 @@ export function parseSvgLayered(svgText: string, tolerance = 0.25): LayeredShape
     }
   }
   bounds = applyViewBox(bounds, svg)
-  return { layers: ctx.layers, lineLayers: ctx.lineLayers, bounds }
+  return { layers, lineLayers, bounds }
 }
