@@ -1,14 +1,17 @@
-// Convert an SVG document into a flat list of contours composed of line
-// segments. Curves are flattened using `flatten.ts`. Supports the most
-// common shape elements; transforms and styling are ignored.
+// Convert an SVG document into contours composed of line segments, with
+// optional grouping by fill color. Curves are flattened using
+// `flatten.ts`. Supports the most common shape elements; transforms,
+// strokes, gradients and CSS are ignored.
 
 import { flattenCubic, flattenQuadratic } from './flatten.js'
 import { parsePath } from './pathParser.js'
 import { EDGE_WHITE } from './types.js'
 
-import type { Contour, LineEdge, Shape, Vec2 } from './types.js'
+import type { Contour, LayeredShape, LineEdge, Shape, ShapeLayer, Vec2 } from './types.js'
 
 const CIRCLE_KAPPA = 0.5522847498307936
+const SHAPE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line'])
+const DEFAULT_FILL = '#000000'
 
 interface Pen {
   contours: Contour[]
@@ -169,68 +172,137 @@ function computeBounds(contours: Contour[]): { minX: number; minY: number; maxX:
   return { minX, minY, maxX, maxY }
 }
 
-export function parseSvg(svgText: string, tolerance = 0.25): Shape {
+// Resolve the fill color for an element, walking inline style → fill
+// attribute → inherited from parent. Returns null for `fill="none"`.
+function normalizeFill(value: string): string | null {
+  const v = value.trim().toLowerCase()
+  if (v === 'none' || v === 'transparent') return null
+  return v
+}
+
+function resolveFill(el: Element, inherited: string | null): string | null {
+  const style = el.getAttribute('style')
+  if (style) {
+    const m = /(?:^|;)\s*fill\s*:\s*([^;]+)/i.exec(style)
+    if (m) return normalizeFill(m[1])
+  }
+  const f = el.getAttribute('fill')
+  if (f) return normalizeFill(f)
+  return inherited
+}
+
+function emitShapeForElement(el: Element, pen: Pen) {
+  const tag = el.localName
+  if (tag === 'path') {
+    const d = el.getAttribute('d')
+    if (d) pushPath(pen, d)
+  } else if (tag === 'rect') {
+    const x = parseFloat(el.getAttribute('x') ?? '0')
+    const y = parseFloat(el.getAttribute('y') ?? '0')
+    const w = parseFloat(el.getAttribute('width') ?? '0')
+    const h = parseFloat(el.getAttribute('height') ?? '0')
+    const rx = parseFloat(el.getAttribute('rx') ?? '0')
+    const ry = parseFloat(el.getAttribute('ry') ?? '0')
+    if (w > 0 && h > 0) pushRect(pen, x, y, w, h, rx, ry)
+  } else if (tag === 'circle') {
+    const cx = parseFloat(el.getAttribute('cx') ?? '0')
+    const cy = parseFloat(el.getAttribute('cy') ?? '0')
+    const r = parseFloat(el.getAttribute('r') ?? '0')
+    if (r > 0) pushEllipse(pen, cx, cy, r, r)
+  } else if (tag === 'ellipse') {
+    const cx = parseFloat(el.getAttribute('cx') ?? '0')
+    const cy = parseFloat(el.getAttribute('cy') ?? '0')
+    const rx = parseFloat(el.getAttribute('rx') ?? '0')
+    const ry = parseFloat(el.getAttribute('ry') ?? '0')
+    if (rx > 0 && ry > 0) pushEllipse(pen, cx, cy, rx, ry)
+  } else if (tag === 'polygon' || tag === 'polyline') {
+    const pts = parsePoints(el.getAttribute('points') ?? '')
+    if (pts.length > 0) {
+      moveTo(pen, pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) lineTo(pen, pts[i].x, pts[i].y)
+      if (tag === 'polygon') closeSubpath(pen)
+    }
+  } else if (tag === 'line') {
+    const x1 = parseFloat(el.getAttribute('x1') ?? '0')
+    const y1 = parseFloat(el.getAttribute('y1') ?? '0')
+    const x2 = parseFloat(el.getAttribute('x2') ?? '0')
+    const y2 = parseFloat(el.getAttribute('y2') ?? '0')
+    moveTo(pen, x1, y1)
+    lineTo(pen, x2, y2)
+    closeSubpath(pen)
+  }
+}
+
+interface VisitContext {
+  layered: boolean
+  layers: ShapeLayer[]
+  fallbackPen: Pen
+  tolerance: number
+}
+
+function visit(el: Element, ctx: VisitContext, inheritedFill: string | null) {
+  const tag = el.localName
+  const fill = resolveFill(el, inheritedFill)
+
+  if (SHAPE_TAGS.has(tag)) {
+    if (ctx.layered) {
+      if (fill === null) return
+      const pen = newPen(ctx.tolerance)
+      emitShapeForElement(el, pen)
+      closeSubpath(pen)
+      if (pen.contours.length === 0) return
+      const last = ctx.layers[ctx.layers.length - 1]
+      if (last && last.fill === fill) {
+        for (const c of pen.contours) last.contours.push(c)
+      } else {
+        ctx.layers.push({ fill, contours: pen.contours })
+      }
+    } else {
+      emitShapeForElement(el, ctx.fallbackPen)
+    }
+    return
+  }
+
+  for (const child of Array.from(el.children)) visit(child, ctx, fill)
+}
+
+function loadSvg(svgText: string): SVGSVGElement {
   const parser = new DOMParser()
   const doc = parser.parseFromString(svgText, 'image/svg+xml')
   const svg = doc.documentElement as unknown as SVGSVGElement
   if (svg.nodeName !== 'svg') throw new Error('Root element is not <svg>')
+  return svg
+}
 
-  const pen = newPen(tolerance)
-
-  const visit = (el: Element) => {
-    const tag = el.localName
-    if (tag === 'path') {
-      const d = el.getAttribute('d')
-      if (d) pushPath(pen, d)
-    } else if (tag === 'rect') {
-      const x = parseFloat(el.getAttribute('x') ?? '0')
-      const y = parseFloat(el.getAttribute('y') ?? '0')
-      const w = parseFloat(el.getAttribute('width') ?? '0')
-      const h = parseFloat(el.getAttribute('height') ?? '0')
-      const rx = parseFloat(el.getAttribute('rx') ?? '0')
-      const ry = parseFloat(el.getAttribute('ry') ?? '0')
-      if (w > 0 && h > 0) pushRect(pen, x, y, w, h, rx, ry)
-    } else if (tag === 'circle') {
-      const cx = parseFloat(el.getAttribute('cx') ?? '0')
-      const cy = parseFloat(el.getAttribute('cy') ?? '0')
-      const r = parseFloat(el.getAttribute('r') ?? '0')
-      if (r > 0) pushEllipse(pen, cx, cy, r, r)
-    } else if (tag === 'ellipse') {
-      const cx = parseFloat(el.getAttribute('cx') ?? '0')
-      const cy = parseFloat(el.getAttribute('cy') ?? '0')
-      const rx = parseFloat(el.getAttribute('rx') ?? '0')
-      const ry = parseFloat(el.getAttribute('ry') ?? '0')
-      if (rx > 0 && ry > 0) pushEllipse(pen, cx, cy, rx, ry)
-    } else if (tag === 'polygon' || tag === 'polyline') {
-      const pts = parsePoints(el.getAttribute('points') ?? '')
-      if (pts.length > 0) {
-        moveTo(pen, pts[0].x, pts[0].y)
-        for (let i = 1; i < pts.length; i++) lineTo(pen, pts[i].x, pts[i].y)
-        if (tag === 'polygon') closeSubpath(pen)
-      }
-    } else if (tag === 'line') {
-      const x1 = parseFloat(el.getAttribute('x1') ?? '0')
-      const y1 = parseFloat(el.getAttribute('y1') ?? '0')
-      const x2 = parseFloat(el.getAttribute('x2') ?? '0')
-      const y2 = parseFloat(el.getAttribute('y2') ?? '0')
-      moveTo(pen, x1, y1)
-      lineTo(pen, x2, y2)
-      closeSubpath(pen)
-    }
-    for (const child of Array.from(el.children)) visit(child)
-  }
-
-  visit(svg)
-  closeSubpath(pen)
-
-  const bounds = computeBounds(pen.contours)
+function applyViewBox(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  svg: SVGSVGElement,
+): { minX: number; minY: number; maxX: number; maxY: number } {
   const vb = getViewBox(svg)
-  if (vb) {
-    bounds.minX = Math.min(bounds.minX, vb.minX)
-    bounds.minY = Math.min(bounds.minY, vb.minY)
-    bounds.maxX = Math.max(bounds.maxX, vb.minX + vb.w)
-    bounds.maxY = Math.max(bounds.maxY, vb.minY + vb.h)
+  if (!vb) return bounds
+  return {
+    minX: Math.min(bounds.minX, vb.minX),
+    minY: Math.min(bounds.minY, vb.minY),
+    maxX: Math.max(bounds.maxX, vb.minX + vb.w),
+    maxY: Math.max(bounds.maxY, vb.minY + vb.h),
   }
+}
 
+export function parseSvg(svgText: string, tolerance = 0.25): Shape {
+  const svg = loadSvg(svgText)
+  const pen = newPen(tolerance)
+  const ctx: VisitContext = { layered: false, layers: [], fallbackPen: pen, tolerance }
+  visit(svg, ctx, DEFAULT_FILL)
+  closeSubpath(pen)
+  const bounds = applyViewBox(computeBounds(pen.contours), svg)
   return { contours: pen.contours, bounds }
+}
+
+export function parseSvgLayered(svgText: string, tolerance = 0.25): LayeredShape {
+  const svg = loadSvg(svgText)
+  const ctx: VisitContext = { layered: true, layers: [], fallbackPen: newPen(tolerance), tolerance }
+  visit(svg, ctx, DEFAULT_FILL)
+  const allContours = ctx.layers.flatMap(l => l.contours)
+  const bounds = applyViewBox(computeBounds(allContours), svg)
+  return { layers: ctx.layers, bounds }
 }

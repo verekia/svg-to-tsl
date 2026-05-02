@@ -6,12 +6,19 @@
 //   • Low-level  — `parseSvg`, `colorEdges` and the path/Bézier helpers
 //     for callers that want to drive the pipeline themselves.
 
-export { bakeSvgToMsdf, type BakeOptions, type BakeResult } from './bake.js'
+export {
+  bakeSvgToMsdf,
+  bakeSvgToMsdfLayered,
+  type BakeOptions,
+  type BakeResult,
+  type LayeredBakeLayer,
+  type LayeredBakeResult,
+} from './bake.js'
 export { SvgMsdfLoader, type SvgMsdfMetadata } from './SvgMsdfLoader.js'
 export { MsdfMaterial, type MsdfMaterialParameters } from './MsdfMaterial.js'
 export { msdfFragment } from './shaders.js'
 
-export { parseSvg } from './parseSvg.js'
+export { parseSvg, parseSvgLayered } from './parseSvg.js'
 export { parsePath, type PathCommand } from './pathParser.js'
 export { flattenCubic, flattenQuadratic } from './flatten.js'
 export { colorEdges } from './edgeColoring.js'
@@ -20,6 +27,8 @@ export {
   type LineEdge,
   type Contour,
   type Shape,
+  type ShapeLayer,
+  type LayeredShape,
   EDGE_RED,
   EDGE_GREEN,
   EDGE_BLUE,
