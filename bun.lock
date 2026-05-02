@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "svg-to-tsl-monorepo",
+      "name": "svg-to-msdf-monorepo",
       "devDependencies": {
         "husky": "9.1.7",
         "oxfmt": "0.28.0",
@@ -19,7 +19,7 @@
         "eruda": "3.4.3",
         "react": "19.2.5",
         "react-dom": "19.2.5",
-        "svg-to-tsl": "workspace:*",
+        "svg-to-msdf": "workspace:*",
         "three": "0.183.2",
       },
       "devDependencies": {
@@ -37,7 +37,7 @@
       },
     },
     "library": {
-      "name": "svg-to-tsl",
+      "name": "svg-to-msdf",
       "version": "0.0.1",
       "devDependencies": {
         "@types/bun": "1.3.8",
@@ -658,7 +658,7 @@
 
     "suspend-react": ["suspend-react@0.1.3", "", { "peerDependencies": { "react": ">=17.0" } }, "sha512-aqldKgX9aZqpoDp3e8/BZ8Dm7x1pJl+qI3ZKxDN0i/IQTWUwBx/ManmlVJ3wowqbno6c2bmiIfs+Um6LbsjJyQ=="],
 
-    "svg-to-tsl": ["svg-to-tsl@workspace:library"],
+    "svg-to-msdf": ["svg-to-msdf@workspace:library"],
 
     "tailwindcss": ["tailwindcss@4.1.18", "", {}, "sha512-4+Z+0yiYyEtUVCScyfHCxOYP06L5Ne+JiHhY2IjR2KWMIWhJOYZKLSGZaP5HkZ8+bY0cxfzwDE5uOmzFXyIwxw=="],
 

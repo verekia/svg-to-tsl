@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { bakeSvgToMsdfLayered } from 'svg-to-tsl'
+import { bakeSvgToMsdfLayered } from 'svg-to-msdf'
 
 import type { Texture } from 'three'
 
@@ -75,7 +75,7 @@ export function useSvgMsdf(svgText: string | null, options: Options) {
         setBaking(false)
       })
       .catch(err => {
-        console.error('[svg-to-tsl] bake failed:', err)
+        console.error('[svg-to-msdf] bake failed:', err)
         if (!cancelled) setBaking(false)
       })
     return () => {

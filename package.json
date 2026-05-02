@@ -1,5 +1,5 @@
 {
-  "name": "svg-to-tsl-monorepo",
+  "name": "svg-to-msdf-monorepo",
   "version": "0.0.0",
   "private": true,
   "workspaces": [
@@ -19,7 +19,7 @@
     "buntest": "bun test",
     "all": "bun run lint && bun run format:check && bun run buntest && bun run typecheck",
     "prepare": "husky",
-    "pub": "bun run --filter 'svg-to-tsl' build && npm publish --workspace library"
+    "pub": "bun run --filter 'svg-to-msdf' build && npm publish --workspace library"
   },
   "devDependencies": {
     "husky": "9.1.7",

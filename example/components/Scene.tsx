@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 
-import { MsdfMaterial } from 'svg-to-tsl'
+import { MsdfMaterial } from 'svg-to-msdf'
 
 import { OrbitControls } from '@react-three/drei/webgpu'
 import { Canvas } from '@react-three/fiber/webgpu'

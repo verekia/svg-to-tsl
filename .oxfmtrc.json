@@ -16,7 +16,7 @@
       },
       {
         "groupName": "workspace",
-        "elementNamePattern": ["svg-to-tsl"]
+        "elementNamePattern": ["svg-to-msdf"]
       },
       {
         "groupName": "local",

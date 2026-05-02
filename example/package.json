@@ -16,7 +16,7 @@
     "eruda": "3.4.3",
     "react": "19.2.5",
     "react-dom": "19.2.5",
-    "svg-to-tsl": "workspace:*",
+    "svg-to-msdf": "workspace:*",
     "three": "0.183.2"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-// Public entry point for svg-to-tsl.
+// Public entry point for svg-to-msdf.
 //
 // Two surfaces:
 //   • High-level — `bakeSvgToMsdf()` + `SvgMsdfLoader` + `MsdfMaterial`

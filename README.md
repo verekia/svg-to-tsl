@@ -1,4 +1,4 @@
-# svg-to-tsl
+# svg-to-msdf
 
 Bake an SVG into a Multi-channel Signed Distance Field (MSDF) texture in the browser, then render it as a sharp, infinitely scalable vector texture on any 3D mesh — perfect for cheap logos, icons and decals on Three.js / React Three Fiber meshes.
 
@@ -10,11 +10,11 @@ The point of MSDF: a 256×256 texture renders crisp at any zoom level, because e
 ## Install
 
 ```sh
-npm install svg-to-tsl
+npm install svg-to-msdf
 # or
-pnpm add svg-to-tsl
+pnpm add svg-to-msdf
 # or
-bun add svg-to-tsl
+bun add svg-to-msdf
 ```
 
 `three` is a peer dependency (`>=0.170`).
@@ -24,7 +24,7 @@ bun add svg-to-tsl
 ### `bakeSvgToMsdf` — direct API
 
 ```ts
-import { bakeSvgToMsdf } from 'svg-to-tsl'
+import { bakeSvgToMsdf } from 'svg-to-msdf'
 
 const svgText = await fetch('/logo.svg').then(r => r.text())
 
@@ -39,7 +39,7 @@ material.map = texture
 ### `SvgMsdfLoader` — Three.js Loader
 
 ```ts
-import { SvgMsdfLoader } from 'svg-to-tsl'
+import { SvgMsdfLoader } from 'svg-to-msdf'
 
 const loader = new SvgMsdfLoader()
 loader.size = 256
@@ -50,7 +50,7 @@ const texture = await loader.loadAsync('/logo.svg')
 ### `MsdfMaterial` — drop-in Three.js material
 
 ```ts
-import { MsdfMaterial, SvgMsdfLoader } from 'svg-to-tsl'
+import { MsdfMaterial, SvgMsdfLoader } from 'svg-to-msdf'
 
 const texture = await new SvgMsdfLoader().loadAsync('/logo.svg')
 
@@ -69,7 +69,7 @@ The shader does median-of-3 reconstruction with screen-space derivatives so edge
 
 ```tsx
 import { useLoader } from '@react-three/fiber'
-import { SvgMsdfLoader, MsdfMaterial } from 'svg-to-tsl'
+import { SvgMsdfLoader, MsdfMaterial } from 'svg-to-msdf'
 
 function Logo() {
   const texture = useLoader(SvgMsdfLoader, '/logo.svg', loader => {
@@ -95,7 +95,7 @@ with its own color and you get a multi-color, infinitely scalable vector
 texture from a few small MSDFs.
 
 ```ts
-import { bakeSvgToMsdfLayered } from 'svg-to-tsl'
+import { bakeSvgToMsdfLayered } from 'svg-to-msdf'
 
 const { layers, width, height } = await bakeSvgToMsdfLayered(svgText, {
   size: 256,
@@ -106,7 +106,7 @@ const { layers, width, height } = await bakeSvgToMsdfLayered(svgText, {
 ```
 
 ```tsx
-import { MsdfMaterial } from 'svg-to-tsl'
+import { MsdfMaterial } from 'svg-to-msdf'
 
 function ColoredLogo({ layers }) {
   return (

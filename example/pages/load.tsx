@@ -69,7 +69,7 @@ const LoadPage = () => {
           height,
         })
       } catch (err) {
-        console.error('[svg-to-tsl] PNG load failed:', err)
+        console.error('[svg-to-msdf] PNG load failed:', err)
       }
     }
     setLayers(prev => [...prev, ...loaded])
@@ -145,7 +145,7 @@ const LoadPage = () => {
       {layers.length > 0 && (
         <div className="fixed top-4 left-4 z-20 max-h-[calc(100vh-8rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-black/80 p-4 text-sm leading-relaxed shadow-xl backdrop-blur-xl">
           <div className="mb-0.5 flex items-baseline justify-between gap-2">
-            <h1 className="text-[15px] font-semibold text-white">svg-to-tsl · loader</h1>
+            <h1 className="text-[15px] font-semibold text-white">svg-to-msdf · loader</h1>
             <a href="/" className="text-[11px] text-blue-400 hover:text-blue-300">
               ← baker
             </a>
@@ -156,10 +156,7 @@ const LoadPage = () => {
 
           <div className="border-t border-white/10 pt-2 pb-3">
             <Row label="PNG total" value={formatBytes(layers.reduce((s, l) => s + l.fileSize, 0))} />
-            <Row
-              label="VRAM (RGBA8)"
-              value={formatBytes(layers.reduce((s, l) => s + l.width * l.height * 4, 0))}
-            />
+            <Row label="VRAM (RGBA8)" value={formatBytes(layers.reduce((s, l) => s + l.width * l.height * 4, 0))} />
           </div>
 
           <div className="space-y-2 border-t border-white/10 pt-3">
