@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "portless svg-to-tsl next dev",
+    "dev": "portless msdf next dev",
     "build": "next build",
     "start": "serve out",
     "typecheck": "tsc --noEmit"
