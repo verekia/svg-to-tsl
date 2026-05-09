@@ -5,6 +5,7 @@
     "": {
       "name": "svg-to-msdf-monorepo",
       "devDependencies": {
+        "@verekia/warden": "0.0.3",
         "husky": "9.1.7",
         "oxfmt": "0.48.0",
         "oxlint": "1.63.0",
@@ -393,6 +394,8 @@
     "@use-gesture/core": ["@use-gesture/core@10.3.1", "", {}, "sha512-WcINiDt8WjqBdUXye25anHiNxPc0VOrlT8F6LLkU6cycrOGUDyY/yyFmsg3k8i5OLvv25llc0QC45GhR/C8llw=="],
 
     "@use-gesture/react": ["@use-gesture/react@10.3.1", "", { "dependencies": { "@use-gesture/core": "10.3.1" }, "peerDependencies": { "react": ">= 16.8.0" } }, "sha512-Yy19y6O2GJq8f7CHf7L0nxL8bf4PZCPaVOCgJrusOeFHY1LvHgYXnmnXg6N5iwAnbgbZCDjo60SiM6IPJi9C5g=="],
+
+    "@verekia/warden": ["@verekia/warden@0.0.3", "", { "bin": { "warden": "src/index.ts" } }, "sha512-HdaKlZE48Hn3MwFQjGw/+kvbqExjPu+vWxPOm4Z8VIS0nnaNro3Mj5CiXZ5QzXutKJ77crnlUz4+riZ0nwpioQ=="],
 
     "@webgpu/types": ["@webgpu/types@0.1.69", "", {}, "sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ=="],
 
