@@ -17,7 +17,8 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "test": "bun test",
-    "all": "bun run format:check && bun run lint && bun run typecheck && bun run test",
+    "warden": "warden",
+    "all": "bun run format:check && bun run lint && bun run typecheck && bun run warden && bun run test",
     "prepare": "husky",
     "pub": "bun run --filter 'svg-to-msdf' build && npm publish --workspace library"
   },
@@ -36,7 +37,7 @@
     "checks": {
       "typecheckScript": {
         "modes": {
-          "gputex": "bun-filter-all"
+          "svg-to-tsl": "bun-filter-all"
         }
       }
     }
