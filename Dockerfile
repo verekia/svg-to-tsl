@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package.json bun.lock .
 COPY example/package.json example/package.json
 COPY library/package.json library/package.json
+COPY patches patches
 
 # https://github.com/oven-sh/bun/issues/4938
 RUN echo 'net.ipv6.conf.all.disable_ipv6 = 1' >> /etc/sysctl.conf || true
